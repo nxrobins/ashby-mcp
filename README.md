@@ -48,6 +48,56 @@ In any Claude Code session, ask things like:
 
 The shared team API key must have the right scopes in Ashby for the tools you use. At minimum the team key needs: candidates read + write, jobs read, projects read, and hiring-process metadata read (for custom fields). Interview tools additionally need "read interviews" — if you see a `403 Forbidden` from an interview tool, have an Ashby admin grant that scope on the team key.
 
+## Using from Claude Cowork (browser)
+
+Cowork runs in the browser and can't spawn local processes, so the stdio server above doesn't work there. The same code also runs as an HTTP/SSE server; you host it, teammates add it as a custom connector in Cowork.
+
+### One-time server setup (runs on someone's always-on machine)
+
+1. **Install `cloudflared`** (macOS: `brew install cloudflared`).
+
+2. **Run the MCP in HTTP mode** — pick a long random bearer token and keep it secret:
+
+   ```bash
+   ASHBY_API_KEY=<team-key> \
+   MCP_TRANSPORT=http \
+   MCP_PORT=9821 \
+   MCP_BEARER_TOKEN=<long-random-token> \
+   uv --directory /path/to/mcp-ashby run ashby
+   ```
+
+3. **In a second terminal, open a Cloudflare tunnel** pointing at the local server:
+
+   ```bash
+   cloudflared tunnel --url http://127.0.0.1:9821
+   ```
+
+   Cloudflare prints a URL like `https://random-words.trycloudflare.com`. That's your public MCP URL.
+
+   > **Quick-tunnel caveat:** the URL changes every time you restart `cloudflared`. For stable team use, [create a named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/named-tunnels/) bound to a domain you own.
+
+4. **Verify** from another machine:
+
+   ```bash
+   curl https://random-words.trycloudflare.com/healthz
+   # → {"ok":true,"auth_required":true}
+   ```
+
+### Per-teammate setup in Cowork
+
+1. In Cowork: **Customize → Connectors → Add custom connector**
+2. **Name:** `Ashby`
+3. **URL:** `https://random-words.trycloudflare.com/sse` (note the `/sse` path)
+4. **Authorization Token:** the bearer token from step 2 above
+5. Save. Ashby tools now appear in Cowork alongside the built-in ones.
+
+### Security note
+
+The bearer token is the only thing standing between the public internet and your Ashby workspace. Treat it like a password:
+- Share via 1Password / Slack DM, not email or git.
+- Rotate if you suspect it's leaked (change `MCP_BEARER_TOKEN` on the server, tell teammates to update their Cowork connector config).
+- Never log it, commit it, or put it in a docs page.
+
 ## Development
 
 ### Run the test suite

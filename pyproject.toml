@@ -11,19 +11,20 @@ requires-python = ">=3.10"
 keywords = ["mcp", "llm", "ashby", "ats"]
 dependencies = [
     "mcp",
-    "requests",
+    "httpx>=0.27",
+    "tenacity>=8.0",
     "python-dotenv",
 ]
 license = { text = "MIT" }
 authors = [
-    { name = "Nicolas Thouzeau", email = "nicolas.thouzeau@gmail.com" }
+    { name = "Nigel Xavier", email = "nigel@disisnotawebsite.com" }
 ]
 
 [project.urls]
-Homepage = "https://github.com/thz/MCP-Ashby"
+Homepage = "https://github.com/nxrobins/ashby-mcp"
 
 [project.scripts]
-ashby = "src.ashby:main"
+ashby-mcp = "src.ashby:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
@@ -32,7 +33,7 @@ packages = ["src"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "responses>=0.25",
+    "pytest-httpx>=0.30",
 ]
 
 [tool.pytest.ini_options]

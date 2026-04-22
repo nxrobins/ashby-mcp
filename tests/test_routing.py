@@ -1,7 +1,7 @@
 """Unit tests — verify every MCP tool dispatches to the correct Ashby
 endpoint and forwards its arguments faithfully.
 
-No network calls are made. `responses` intercepts every outbound HTTP
+No network calls are made. `pytest-httpx` intercepts every outbound HTTP
 request. Each test asserts:
   1. the correct URL was hit,
   2. the JSON body matches what the caller passed in (or the expected
@@ -11,23 +11,22 @@ request. Each test asserts:
 import json
 
 import pytest
-import responses
 
 BASE = "https://api.ashbyhq.com"
 
 
-def _ok(endpoint: str, body: dict | None = None, json_body: dict | None = None):
-    """Register a happy-path POST mock and return the RequestsMock call handle."""
-    return responses.post(
-        f"{BASE}{endpoint}",
+def _ok(httpx_mock, endpoint: str, body: dict | None = None, json_body: dict | None = None):
+    """Register a happy-path POST mock."""
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}{endpoint}",
         json=json_body or {"success": True, "results": body or {}},
-        status=200,
     )
 
 
-def _sent_body(mock_call) -> dict:
+def _sent_body(httpx_mock) -> dict:
     """Decode the JSON body that was sent to the registered mock."""
-    return json.loads(mock_call.calls[0].request.body)
+    return json.loads(httpx_mock.get_request().content)
 
 
 # ---------------------------------------------------------------------------
@@ -35,9 +34,8 @@ def _sent_body(mock_call) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@responses.activate
-async def test_create_candidate_uses_camelcase(call_tool):
-    rsp = _ok("/candidate.create")
+async def test_create_candidate_uses_camelcase(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.create")
     args = {
         "name": "Ada Lovelace",
         "email": "ada@example.com",
@@ -45,85 +43,74 @@ async def test_create_candidate_uses_camelcase(call_tool):
         "linkedInUrl": "https://linkedin.com/in/ada",
     }
     await call_tool("create_candidate", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_search_candidates(call_tool):
-    rsp = _ok("/candidate.search")
+async def test_search_candidates(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.search")
     await call_tool("search_candidates", {"name": "Ada"})
-    assert _sent_body(rsp) == {"name": "Ada"}
+    assert _sent_body(httpx_mock) == {"name": "Ada"}
 
 
-@responses.activate
-async def test_list_candidates_uses_cursor_pagination(call_tool):
-    rsp = _ok("/candidate.list")
+async def test_list_candidates_uses_cursor_pagination(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.list")
     await call_tool("list_candidates", {"limit": 25, "cursor": "abc"})
-    assert _sent_body(rsp) == {"limit": 25, "cursor": "abc"}
+    assert _sent_body(httpx_mock) == {"limit": 25, "cursor": "abc"}
 
 
-@responses.activate
-async def test_get_candidate(call_tool):
-    rsp = _ok("/candidate.info")
+async def test_get_candidate(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.info")
     await call_tool("get_candidate", {"id": "cand-123"})
-    assert _sent_body(rsp) == {"id": "cand-123"}
+    assert _sent_body(httpx_mock) == {"id": "cand-123"}
 
 
-@responses.activate
-async def test_update_candidate(call_tool):
-    rsp = _ok("/candidate.update")
+async def test_update_candidate(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.update")
     args = {"candidateId": "cand-123", "email": "new@example.com"}
     await call_tool("update_candidate", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_add_candidate_tag(call_tool):
-    rsp = _ok("/candidate.addTag")
+async def test_add_candidate_tag(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.addTag")
     await call_tool("add_candidate_tag", {"candidateId": "c1", "tagId": "t1"})
-    assert _sent_body(rsp) == {"candidateId": "c1", "tagId": "t1"}
+    assert _sent_body(httpx_mock) == {"candidateId": "c1", "tagId": "t1"}
 
 
-@responses.activate
-async def test_list_candidate_tags(call_tool):
-    rsp = _ok("/candidateTag.list")
+async def test_list_candidate_tags(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidateTag.list")
     await call_tool("list_candidate_tags", {"includeArchived": True})
-    assert _sent_body(rsp) == {"includeArchived": True}
+    assert _sent_body(httpx_mock) == {"includeArchived": True}
 
 
-@responses.activate
-async def test_add_candidate_to_project(call_tool):
-    rsp = _ok("/candidate.addProject")
+async def test_add_candidate_to_project(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.addProject")
     await call_tool("add_candidate_to_project", {"candidateId": "c1", "projectId": "p1"})
-    assert _sent_body(rsp) == {"candidateId": "c1", "projectId": "p1"}
+    assert _sent_body(httpx_mock) == {"candidateId": "c1", "projectId": "p1"}
 
 
-@responses.activate
-async def test_create_candidate_note(call_tool):
-    rsp = _ok("/candidate.createNote")
+async def test_create_candidate_note(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.createNote")
     await call_tool("create_candidate_note", {"candidateId": "c1", "note": "hello"})
-    assert _sent_body(rsp) == {"candidateId": "c1", "note": "hello"}
+    assert _sent_body(httpx_mock) == {"candidateId": "c1", "note": "hello"}
 
 
-@responses.activate
-async def test_list_candidate_notes(call_tool):
-    rsp = _ok("/candidate.listNotes")
+async def test_list_candidate_notes(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.listNotes")
     await call_tool("list_candidate_notes", {"candidateId": "c1"})
-    assert _sent_body(rsp) == {"candidateId": "c1"}
+    assert _sent_body(httpx_mock) == {"candidateId": "c1"}
 
 
-@responses.activate
-async def test_list_candidate_client_info(call_tool):
-    rsp = _ok("/candidate.listClientInfo")
+async def test_list_candidate_client_info(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.listClientInfo")
     await call_tool("list_candidate_client_info", {"candidateId": "c1"})
-    assert _sent_body(rsp) == {"candidateId": "c1"}
+    assert _sent_body(httpx_mock) == {"candidateId": "c1"}
 
 
-@responses.activate
-async def test_anonymize_candidate(call_tool):
-    rsp = _ok("/candidate.anonymize")
+async def test_anonymize_candidate(httpx_mock, call_tool):
+    _ok(httpx_mock, "/candidate.anonymize")
     await call_tool("anonymize_candidate", {"candidateId": "c1"})
-    assert _sent_body(rsp) == {"candidateId": "c1"}
+    assert _sent_body(httpx_mock) == {"candidateId": "c1"}
 
 
 # ---------------------------------------------------------------------------
@@ -131,31 +118,29 @@ async def test_anonymize_candidate(call_tool):
 # ---------------------------------------------------------------------------
 
 
-@responses.activate
-async def test_upload_candidate_resume(call_tool, tmp_path):
-    rsp = _ok("/candidate.uploadResume")
+async def test_upload_candidate_resume(httpx_mock, call_tool, tmp_path):
+    _ok(httpx_mock, "/candidate.uploadResume")
     f = tmp_path / "resume.pdf"
     f.write_bytes(b"%PDF-1.4 dummy")
     await call_tool("upload_candidate_resume", {"candidateId": "c1", "file_path": str(f)})
-    req = rsp.calls[0].request
+    req = httpx_mock.get_request()
     # Multipart body carries both the candidateId form field and the resume part.
-    assert b'name="candidateId"' in req.body
-    assert b"c1" in req.body
-    assert b'name="resume"' in req.body
-    assert b"%PDF-1.4 dummy" in req.body
+    assert b'name="candidateId"' in req.content
+    assert b"c1" in req.content
+    assert b'name="resume"' in req.content
+    assert b"%PDF-1.4 dummy" in req.content
     # Crucial: no JSON content-type leaked from the default client headers.
-    assert req.headers["Content-Type"].startswith("multipart/form-data")
+    assert req.headers["content-type"].startswith("multipart/form-data")
 
 
-@responses.activate
-async def test_upload_candidate_file(call_tool, tmp_path):
-    rsp = _ok("/candidate.uploadFile")
+async def test_upload_candidate_file(httpx_mock, call_tool, tmp_path):
+    _ok(httpx_mock, "/candidate.uploadFile")
     f = tmp_path / "doc.txt"
     f.write_bytes(b"hello")
     await call_tool("upload_candidate_file", {"candidateId": "c1", "file_path": str(f)})
-    req = rsp.calls[0].request
-    assert b'name="file"' in req.body
-    assert b"hello" in req.body
+    req = httpx_mock.get_request()
+    assert b'name="file"' in req.content
+    assert b"hello" in req.content
 
 
 # ---------------------------------------------------------------------------
@@ -163,25 +148,22 @@ async def test_upload_candidate_file(call_tool, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@responses.activate
-async def test_get_project(call_tool):
-    rsp = _ok("/project.info")
+async def test_get_project(httpx_mock, call_tool):
+    _ok(httpx_mock, "/project.info")
     await call_tool("get_project", {"projectId": "p1"})
-    assert _sent_body(rsp) == {"projectId": "p1"}
+    assert _sent_body(httpx_mock) == {"projectId": "p1"}
 
 
-@responses.activate
-async def test_list_projects(call_tool):
-    rsp = _ok("/project.list")
+async def test_list_projects(httpx_mock, call_tool):
+    _ok(httpx_mock, "/project.list")
     await call_tool("list_projects", {"limit": 10})
-    assert _sent_body(rsp) == {"limit": 10}
+    assert _sent_body(httpx_mock) == {"limit": 10}
 
 
-@responses.activate
-async def test_search_projects(call_tool):
-    rsp = _ok("/project.search")
+async def test_search_projects(httpx_mock, call_tool):
+    _ok(httpx_mock, "/project.search")
     await call_tool("search_projects", {"title": "BizOps"})
-    assert _sent_body(rsp) == {"title": "BizOps"}
+    assert _sent_body(httpx_mock) == {"title": "BizOps"}
 
 
 # ---------------------------------------------------------------------------
@@ -189,12 +171,12 @@ async def test_search_projects(call_tool):
 # ---------------------------------------------------------------------------
 
 
-@responses.activate
-async def test_list_custom_fields_strips_client_side_filter(call_tool):
+async def test_list_custom_fields_strips_client_side_filter(httpx_mock, call_tool):
     """objectType is a client-side filter and must NOT be sent to Ashby."""
-    rsp = _ok(
-        "/customField.list",
-        json_body={
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/customField.list",
+        json={
             "success": True,
             "results": [
                 {"id": "f1", "objectType": "Candidate", "title": "Referred By"},
@@ -205,17 +187,17 @@ async def test_list_custom_fields_strips_client_side_filter(call_tool):
     )
     result = await call_tool("list_custom_fields", {"objectType": "Candidate", "limit": 100})
     # objectType is applied locally
-    assert "objectType" not in _sent_body(rsp)
-    assert _sent_body(rsp) == {"limit": 100}
+    assert "objectType" not in _sent_body(httpx_mock)
+    assert _sent_body(httpx_mock) == {"limit": 100}
     # The response is filtered to just Candidate fields.
     assert [r["id"] for r in result["results"]] == ["f1", "f3"]
 
 
-@responses.activate
-async def test_list_custom_fields_no_filter_passes_all(call_tool):
-    rsp = _ok(
-        "/customField.list",
-        json_body={
+async def test_list_custom_fields_no_filter_passes_all(httpx_mock, call_tool):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/customField.list",
+        json={
             "success": True,
             "results": [
                 {"id": "f1", "objectType": "Candidate"},
@@ -224,36 +206,32 @@ async def test_list_custom_fields_no_filter_passes_all(call_tool):
         },
     )
     result = await call_tool("list_custom_fields", {})
-    assert _sent_body(rsp) == {}
+    assert _sent_body(httpx_mock) == {}
     assert len(result["results"]) == 2
 
 
-@responses.activate
-async def test_get_custom_field(call_tool):
-    rsp = _ok("/customField.info")
+async def test_get_custom_field(httpx_mock, call_tool):
+    _ok(httpx_mock, "/customField.info")
     await call_tool("get_custom_field", {"customFieldId": "cf-1"})
-    assert _sent_body(rsp) == {"customFieldId": "cf-1"}
+    assert _sent_body(httpx_mock) == {"customFieldId": "cf-1"}
 
 
-@responses.activate
-async def test_create_custom_field(call_tool):
-    rsp = _ok("/customField.create")
+async def test_create_custom_field(httpx_mock, call_tool):
+    _ok(httpx_mock, "/customField.create")
     args = {"title": "Referral Source", "fieldType": "String", "objectType": "Candidate"}
     await call_tool("create_custom_field", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_set_custom_field_value_string(call_tool):
-    rsp = _ok("/customField.setValue")
+async def test_set_custom_field_value_string(httpx_mock, call_tool):
+    _ok(httpx_mock, "/customField.setValue")
     args = {"objectId": "c1", "objectType": "Candidate", "fieldId": "f1", "fieldValue": "Alice"}
     await call_tool("set_custom_field_value", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_set_custom_field_value_number_range(call_tool):
-    rsp = _ok("/customField.setValue")
+async def test_set_custom_field_value_number_range(httpx_mock, call_tool):
+    _ok(httpx_mock, "/customField.setValue")
     args = {
         "objectId": "j1",
         "objectType": "Job",
@@ -261,7 +239,7 @@ async def test_set_custom_field_value_number_range(call_tool):
         "fieldValue": {"type": "number-range", "minValue": 100000, "maxValue": 150000},
     }
     await call_tool("set_custom_field_value", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
 # ---------------------------------------------------------------------------
@@ -269,55 +247,48 @@ async def test_set_custom_field_value_number_range(call_tool):
 # ---------------------------------------------------------------------------
 
 
-@responses.activate
-async def test_create_job_uses_camelcase(call_tool):
-    rsp = _ok("/job.create")
+async def test_create_job_uses_camelcase(httpx_mock, call_tool):
+    _ok(httpx_mock, "/job.create")
     args = {"title": "SWE", "teamId": "t1", "locationId": "l1"}
     await call_tool("create_job", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_search_jobs(call_tool):
-    rsp = _ok("/job.search")
+async def test_search_jobs(httpx_mock, call_tool):
+    _ok(httpx_mock, "/job.search")
     await call_tool("search_jobs", {"title": "Engineer"})
-    assert _sent_body(rsp) == {"title": "Engineer"}
+    assert _sent_body(httpx_mock) == {"title": "Engineer"}
 
 
-@responses.activate
-async def test_list_jobs_defaults_status_to_open(call_tool):
+async def test_list_jobs_defaults_status_to_open(httpx_mock, call_tool):
     """The handler injects status=['Open'] when the caller omits it."""
-    rsp = _ok("/job.list")
+    _ok(httpx_mock, "/job.list")
     await call_tool("list_jobs", {})
-    assert _sent_body(rsp) == {"status": ["Open"]}
+    assert _sent_body(httpx_mock) == {"status": ["Open"]}
 
 
-@responses.activate
-async def test_list_jobs_respects_explicit_status(call_tool):
-    rsp = _ok("/job.list")
+async def test_list_jobs_respects_explicit_status(httpx_mock, call_tool):
+    _ok(httpx_mock, "/job.list")
     await call_tool("list_jobs", {"status": ["Closed", "Archived"]})
-    assert _sent_body(rsp) == {"status": ["Closed", "Archived"]}
+    assert _sent_body(httpx_mock) == {"status": ["Closed", "Archived"]}
 
 
-@responses.activate
-async def test_get_job(call_tool):
-    rsp = _ok("/job.info")
+async def test_get_job(httpx_mock, call_tool):
+    _ok(httpx_mock, "/job.info")
     await call_tool("get_job", {"id": "j1"})
-    assert _sent_body(rsp) == {"id": "j1"}
+    assert _sent_body(httpx_mock) == {"id": "j1"}
 
 
-@responses.activate
-async def test_update_job(call_tool):
-    rsp = _ok("/job.update")
+async def test_update_job(httpx_mock, call_tool):
+    _ok(httpx_mock, "/job.update")
     await call_tool("update_job", {"jobId": "j1", "title": "New title"})
-    assert _sent_body(rsp) == {"jobId": "j1", "title": "New title"}
+    assert _sent_body(httpx_mock) == {"jobId": "j1", "title": "New title"}
 
 
-@responses.activate
-async def test_set_job_status(call_tool):
-    rsp = _ok("/job.setStatus")
+async def test_set_job_status(httpx_mock, call_tool):
+    _ok(httpx_mock, "/job.setStatus")
     await call_tool("set_job_status", {"jobId": "j1", "status": "Closed"})
-    assert _sent_body(rsp) == {"jobId": "j1", "status": "Closed"}
+    assert _sent_body(httpx_mock) == {"jobId": "j1", "status": "Closed"}
 
 
 # ---------------------------------------------------------------------------
@@ -325,70 +296,61 @@ async def test_set_job_status(call_tool):
 # ---------------------------------------------------------------------------
 
 
-@responses.activate
-async def test_create_application_uses_camelcase(call_tool):
-    rsp = _ok("/application.create")
+async def test_create_application_uses_camelcase(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.create")
     args = {"candidateId": "c1", "jobId": "j1", "sourceId": "s1"}
     await call_tool("create_application", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_list_applications_cursor_pagination(call_tool):
-    rsp = _ok("/application.list")
+async def test_list_applications_cursor_pagination(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.list")
     await call_tool("list_applications", {"status": "Active", "limit": 50})
-    assert _sent_body(rsp) == {"status": "Active", "limit": 50}
+    assert _sent_body(httpx_mock) == {"status": "Active", "limit": 50}
 
 
-@responses.activate
-async def test_get_application(call_tool):
-    rsp = _ok("/application.info")
+async def test_get_application(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.info")
     await call_tool("get_application", {"applicationId": "a1", "expand": ["openings"]})
-    assert _sent_body(rsp) == {"applicationId": "a1", "expand": ["openings"]}
+    assert _sent_body(httpx_mock) == {"applicationId": "a1", "expand": ["openings"]}
 
 
-@responses.activate
-async def test_update_application(call_tool):
-    rsp = _ok("/application.update")
+async def test_update_application(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.update")
     await call_tool("update_application", {"applicationId": "a1", "sourceId": "s2"})
-    assert _sent_body(rsp) == {"applicationId": "a1", "sourceId": "s2"}
+    assert _sent_body(httpx_mock) == {"applicationId": "a1", "sourceId": "s2"}
 
 
-@responses.activate
-async def test_change_application_stage(call_tool):
-    rsp = _ok("/application.change_stage")
+async def test_change_application_stage(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.change_stage")
     await call_tool("change_application_stage", {"applicationId": "a1", "interviewStageId": "st1"})
-    assert _sent_body(rsp) == {"applicationId": "a1", "interviewStageId": "st1"}
+    assert _sent_body(httpx_mock) == {"applicationId": "a1", "interviewStageId": "st1"}
 
 
-@responses.activate
-async def test_change_application_source(call_tool):
-    rsp = _ok("/application.change_source")
+async def test_change_application_source(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.change_source")
     await call_tool("change_application_source", {"applicationId": "a1", "sourceId": "s1"})
-    assert _sent_body(rsp) == {"applicationId": "a1", "sourceId": "s1"}
+    assert _sent_body(httpx_mock) == {"applicationId": "a1", "sourceId": "s1"}
 
 
-@responses.activate
-async def test_transfer_application(call_tool):
-    rsp = _ok("/application.transfer")
+async def test_transfer_application(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.transfer")
     await call_tool("transfer_application", {"applicationId": "a1", "jobId": "j2"})
-    assert _sent_body(rsp) == {"applicationId": "a1", "jobId": "j2"}
+    assert _sent_body(httpx_mock) == {"applicationId": "a1", "jobId": "j2"}
 
 
-@responses.activate
-async def test_add_application_hiring_team_member(call_tool):
-    rsp = _ok("/application.addHiringTeamMember")
+async def test_add_application_hiring_team_member(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.addHiringTeamMember")
     args = {"applicationId": "a1", "teamMemberId": "u1", "roleId": "r1"}
     await call_tool("add_application_hiring_team_member", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_remove_application_hiring_team_member(call_tool):
-    rsp = _ok("/application.removeHiringTeamMember")
+async def test_remove_application_hiring_team_member(httpx_mock, call_tool):
+    _ok(httpx_mock, "/application.removeHiringTeamMember")
     args = {"applicationId": "a1", "teamMemberId": "u1", "roleId": "r1"}
     await call_tool("remove_application_hiring_team_member", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
 # ---------------------------------------------------------------------------
@@ -396,23 +358,20 @@ async def test_remove_application_hiring_team_member(call_tool):
 # ---------------------------------------------------------------------------
 
 
-@responses.activate
-async def test_get_interview(call_tool):
-    rsp = _ok("/interview.info")
+async def test_get_interview(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interview.info")
     await call_tool("get_interview", {"id": "iv1"})
-    assert _sent_body(rsp) == {"id": "iv1"}
+    assert _sent_body(httpx_mock) == {"id": "iv1"}
 
 
-@responses.activate
-async def test_list_interviews(call_tool):
-    rsp = _ok("/interview.list")
+async def test_list_interviews(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interview.list")
     await call_tool("list_interviews", {"includeArchived": False})
-    assert _sent_body(rsp) == {"includeArchived": False}
+    assert _sent_body(httpx_mock) == {"includeArchived": False}
 
 
-@responses.activate
-async def test_create_interview_schedule(call_tool):
-    rsp = _ok("/interviewSchedule.create")
+async def test_create_interview_schedule(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewSchedule.create")
     args = {
         "applicationId": "a1",
         "interviewEvents": [
@@ -424,19 +383,17 @@ async def test_create_interview_schedule(call_tool):
         ],
     }
     await call_tool("create_interview_schedule", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_list_interview_schedules(call_tool):
-    rsp = _ok("/interviewSchedule.list")
+async def test_list_interview_schedules(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewSchedule.list")
     await call_tool("list_interview_schedules", {"applicationId": "a1"})
-    assert _sent_body(rsp) == {"applicationId": "a1"}
+    assert _sent_body(httpx_mock) == {"applicationId": "a1"}
 
 
-@responses.activate
-async def test_update_interview_schedule(call_tool):
-    rsp = _ok("/interviewSchedule.update")
+async def test_update_interview_schedule(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewSchedule.update")
     args = {
         "interviewScheduleId": "sch-1",
         "interviewEvent": {
@@ -447,49 +404,95 @@ async def test_update_interview_schedule(call_tool):
         },
     }
     await call_tool("update_interview_schedule", args)
-    assert _sent_body(rsp) == args
+    assert _sent_body(httpx_mock) == args
 
 
-@responses.activate
-async def test_cancel_interview_schedule(call_tool):
-    rsp = _ok("/interviewSchedule.cancel")
+async def test_cancel_interview_schedule(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewSchedule.cancel")
     await call_tool("cancel_interview_schedule", {"id": "sch-1", "allowReschedule": True})
-    assert _sent_body(rsp) == {"id": "sch-1", "allowReschedule": True}
+    assert _sent_body(httpx_mock) == {"id": "sch-1", "allowReschedule": True}
 
 
-@responses.activate
-async def test_list_interview_events(call_tool):
-    rsp = _ok("/interviewEvent.list")
+async def test_list_interview_events(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewEvent.list")
     await call_tool("list_interview_events", {"interviewScheduleId": "sch-1", "expand": ["interview"]})
-    assert _sent_body(rsp) == {"interviewScheduleId": "sch-1", "expand": ["interview"]}
+    assert _sent_body(httpx_mock) == {"interviewScheduleId": "sch-1", "expand": ["interview"]}
 
 
-@responses.activate
-async def test_list_interview_plans(call_tool):
-    rsp = _ok("/interviewPlan.list")
+async def test_list_interview_plans(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewPlan.list")
     await call_tool("list_interview_plans", {"includeArchived": True})
-    assert _sent_body(rsp) == {"includeArchived": True}
+    assert _sent_body(httpx_mock) == {"includeArchived": True}
 
 
-@responses.activate
-async def test_list_interview_stages(call_tool):
-    rsp = _ok("/interviewStage.list")
+async def test_list_interview_stages(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewStage.list")
     await call_tool("list_interview_stages", {"interviewPlanId": "plan-1"})
-    assert _sent_body(rsp) == {"interviewPlanId": "plan-1"}
+    assert _sent_body(httpx_mock) == {"interviewPlanId": "plan-1"}
 
 
-@responses.activate
-async def test_get_interview_stage(call_tool):
-    rsp = _ok("/interviewStage.info")
+async def test_get_interview_stage(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewStage.info")
     await call_tool("get_interview_stage", {"interviewStageId": "st-1"})
-    assert _sent_body(rsp) == {"interviewStageId": "st-1"}
+    assert _sent_body(httpx_mock) == {"interviewStageId": "st-1"}
 
 
-@responses.activate
-async def test_list_interview_stage_groups(call_tool):
-    rsp = _ok("/interviewStageGroup.list")
+async def test_list_interview_stage_groups(httpx_mock, call_tool):
+    _ok(httpx_mock, "/interviewStageGroup.list")
     await call_tool("list_interview_stage_groups", {"interviewPlanId": "plan-1"})
-    assert _sent_body(rsp) == {"interviewPlanId": "plan-1"}
+    assert _sent_body(httpx_mock) == {"interviewPlanId": "plan-1"}
+
+
+# ---------------------------------------------------------------------------
+# New tools: list_sources, list_all_candidates
+# ---------------------------------------------------------------------------
+
+
+async def test_list_sources_default(httpx_mock, call_tool):
+    _ok(httpx_mock, "/source.list", json_body={"success": True, "results": [
+        {"id": "s1", "title": "LinkedIn", "isArchived": False, "sourceType": {"id": "st1", "title": "Job Board", "isArchived": False}},
+    ]})
+    await call_tool("list_sources", {})
+    assert _sent_body(httpx_mock) == {"includeArchived": False}
+
+
+async def test_list_sources_include_archived(httpx_mock, call_tool):
+    _ok(httpx_mock, "/source.list")
+    await call_tool("list_sources", {"includeArchived": True})
+    assert _sent_body(httpx_mock) == {"includeArchived": True}
+
+
+async def test_list_all_candidates_single_page(httpx_mock, call_tool):
+    """When moreDataAvailable is false, only one call is made."""
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={"success": True, "results": [{"id": "c1"}, {"id": "c2"}], "moreDataAvailable": False},
+    )
+    result = await call_tool("list_all_candidates", {})
+    assert result["total"] == 2
+    assert len(result["results"]) == 2
+
+
+async def test_list_all_candidates_auto_paginates(httpx_mock, call_tool):
+    """Auto-paginator follows cursors until moreDataAvailable is false."""
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={"success": True, "results": [{"id": "c1"}], "moreDataAvailable": True, "nextCursor": "cursor-2"},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={"success": True, "results": [{"id": "c2"}], "moreDataAvailable": False},
+    )
+    result = await call_tool("list_all_candidates", {})
+    assert result["total"] == 2
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 2
+    # Second request must carry the cursor from the first response.
+    second_body = json.loads(requests[1].content)
+    assert second_body["cursor"] == "cursor-2"
 
 
 # ---------------------------------------------------------------------------
@@ -497,27 +500,26 @@ async def test_list_interview_stage_groups(call_tool):
 # ---------------------------------------------------------------------------
 
 
-@responses.activate
-async def test_auth_uses_http_basic(call_tool, ashby_client):
+async def test_auth_uses_http_basic(httpx_mock, call_tool, ashby_client):
     """Every request must carry HTTP Basic auth built from the loaded
     API key — regardless of what value that key actually has, the
     shape must be `Basic base64(api_key:)`."""
     import base64
 
-    rsp = _ok("/candidate.search")
+    _ok(httpx_mock, "/candidate.search")
     await call_tool("search_candidates", {"name": "x"})
-    sent_auth = rsp.calls[0].request.headers["Authorization"]
+    sent_auth = httpx_mock.get_request().headers["authorization"]
     expected = "Basic " + base64.b64encode(f"{ashby_client.api_key}:".encode()).decode()
     assert sent_auth == expected
 
 
-@responses.activate
-async def test_error_response_surfaced_to_caller(call_tool):
+async def test_error_response_surfaced_to_caller(httpx_mock, call_tool):
     """Ashby's own error envelopes should flow through verbatim."""
-    responses.post(
-        f"{BASE}/candidate.search",
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.search",
         json={"success": False, "errors": ["invalid_input"]},
-        status=200,
+        status_code=200,
     )
     result = await call_tool("search_candidates", {"name": ""})
     assert result == {"success": False, "errors": ["invalid_input"]}

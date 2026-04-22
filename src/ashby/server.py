@@ -1,7 +1,8 @@
 # /// script
 # dependencies = [
 #   "mcp",
-#   "requests",
+#   "httpx",
+#   "tenacity",
 #   "python-dotenv"
 # ]
 # ///
@@ -10,7 +11,8 @@ import json
 from typing import Any, Optional
 import os
 from dotenv import load_dotenv
-import requests
+import httpx
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 import mcp.types as types
 from mcp.server import Server, NotificationOptions
@@ -44,32 +46,33 @@ class AshbyClient:
             print(f"Ashby connection failed: {str(e)}")
             return False
 
-    def _make_request(self, endpoint: str, method: str = "GET", data: Optional[dict] = None) -> dict:
-        """Make a request to the Ashby API.
-        
-        Args:
-            endpoint (str): The API endpoint to call
-            method (str): HTTP method (GET, POST, etc.)
-            data (Optional[dict]): Data to send with the request
-            
-        Returns:
-            dict: Response from the API
-        """
+    @retry(
+        retry=retry_if_exception(
+            lambda exc: isinstance(exc, httpx.HTTPStatusError)
+            and exc.response.status_code in (429, 500, 502, 503, 504)
+        ),
+        wait=wait_exponential(multiplier=1, min=1, max=30),
+        stop=stop_after_attempt(4),
+        reraise=True,
+    )
+    async def _make_request(self, endpoint: str, method: str = "GET", data: Optional[dict] = None) -> dict:
+        """Make a request to the Ashby API."""
         if not self.api_key:
             raise ValueError("Ashby connection not established")
-            
+
         url = f"{self.base_url}{endpoint}"
-        response = requests.request(
-            method=method,
-            url=url,
-            headers=self.headers,
-            json=data,
-            auth=(self.api_key, "")
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method=method,
+                url=url,
+                headers=self.headers,
+                json=data,
+                auth=(self.api_key, ""),
+            )
         response.raise_for_status()
         return response.json()
 
-    def _make_multipart_request(
+    async def _make_multipart_request(
         self,
         endpoint: str,
         data: Optional[dict] = None,
@@ -77,19 +80,20 @@ class AshbyClient:
     ) -> dict:
         """Make a multipart/form-data request to the Ashby API (for file uploads).
 
-        Does NOT send the JSON Content-Type header — `requests` sets the
+        Does NOT send the JSON Content-Type header — httpx sets the
         multipart boundary automatically when `files` is provided.
         """
         if not self.api_key:
             raise ValueError("Ashby connection not established")
 
         url = f"{self.base_url}{endpoint}"
-        response = requests.post(
-            url,
-            data=data,
-            files=files,
-            auth=(self.api_key, ""),
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                data=data,
+                files=files,
+                auth=(self.api_key, ""),
+            )
         response.raise_for_status()
         return response.json()
 
@@ -164,6 +168,16 @@ async def handle_list_tools() -> list[types.Tool]:
                     "cursor": {"type": "string", "description": "Opaque pagination cursor returned by a prior call"},
                     "syncToken": {"type": "string", "description": "Token from a previous full sync — returns only changes since"},
                     "limit": {"type": "integer", "description": "Max results per page (1-100, default 100)"}
+                }
+            }
+        ),
+        types.Tool(
+            name="list_all_candidates",
+            description="Fetch ALL candidates by auto-paginating through every page. Returns the complete list. Use list_candidates instead for large workspaces where you only need a single page.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "syncToken": {"type": "string", "description": "Optional sync token for incremental fetch — returns only candidates changed since the token was issued"}
                 }
             }
         ),
@@ -894,7 +908,20 @@ async def handle_list_tools() -> list[types.Tool]:
                 },
                 "required": ["interviewPlanId"]
             }
-        )
+        ),
+        types.Tool(
+            name="list_sources",
+            description="List all candidate sources defined in the workspace. Returns id and title for each source — use the id with create_candidate (sourceId) and change_application_source. Requires hiringProcessMetadataRead permission.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "includeArchived": {
+                        "type": "boolean",
+                        "description": "Include archived sources in results (default false)"
+                    }
+                }
+            }
+        ),
     ]
 
 @server.call_tool()
@@ -902,7 +929,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
     """Handle tool calls by routing to appropriate Ashby API endpoints."""
     try:
         if name == "create_candidate":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.create",
                 method="POST",
                 data=arguments
@@ -910,7 +937,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Created candidate: {json.dumps(response, indent=2)}")]
             
         elif name == "search_candidates":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.search",
                 method="POST",
                 data=arguments
@@ -918,7 +945,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Search results: {json.dumps(response, indent=2)}")]
             
         elif name == "list_candidates":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.list",
                 method="POST",
                 data=arguments
@@ -926,7 +953,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Candidate list: {json.dumps(response, indent=2)}")]
 
         elif name == "get_candidate":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.info",
                 method="POST",
                 data=arguments
@@ -934,7 +961,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Candidate: {json.dumps(response, indent=2)}")]
 
         elif name == "update_candidate":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.update",
                 method="POST",
                 data=arguments
@@ -942,7 +969,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Updated candidate: {json.dumps(response, indent=2)}")]
 
         elif name == "add_candidate_tag":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.addTag",
                 method="POST",
                 data=arguments
@@ -950,7 +977,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Tag added: {json.dumps(response, indent=2)}")]
 
         elif name == "list_candidate_tags":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidateTag.list",
                 method="POST",
                 data=arguments
@@ -958,7 +985,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Candidate tags: {json.dumps(response, indent=2)}")]
 
         elif name == "add_candidate_to_project":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.addProject",
                 method="POST",
                 data=arguments
@@ -966,7 +993,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Project added: {json.dumps(response, indent=2)}")]
 
         elif name == "create_candidate_note":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.createNote",
                 method="POST",
                 data=arguments
@@ -974,7 +1001,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Note created: {json.dumps(response, indent=2)}")]
 
         elif name == "list_candidate_notes":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.listNotes",
                 method="POST",
                 data=arguments
@@ -982,7 +1009,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Candidate notes: {json.dumps(response, indent=2)}")]
 
         elif name == "list_candidate_client_info":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.listClientInfo",
                 method="POST",
                 data=arguments
@@ -990,7 +1017,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Candidate client info: {json.dumps(response, indent=2)}")]
 
         elif name == "anonymize_candidate":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/candidate.anonymize",
                 method="POST",
                 data=arguments
@@ -1000,7 +1027,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
         elif name == "upload_candidate_resume":
             path = arguments["file_path"]
             with open(path, "rb") as f:
-                response = ashby_client._make_multipart_request(
+                response = await ashby_client._make_multipart_request(
                     "/candidate.uploadResume",
                     data={"candidateId": arguments["candidateId"]},
                     files={"resume": (os.path.basename(path), f)},
@@ -1010,7 +1037,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
         elif name == "upload_candidate_file":
             path = arguments["file_path"]
             with open(path, "rb") as f:
-                response = ashby_client._make_multipart_request(
+                response = await ashby_client._make_multipart_request(
                     "/candidate.uploadFile",
                     data={"candidateId": arguments["candidateId"]},
                     files={"file": (os.path.basename(path), f)},
@@ -1018,7 +1045,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"File uploaded: {json.dumps(response, indent=2)}")]
 
         elif name == "get_project":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/project.info",
                 method="POST",
                 data=arguments
@@ -1026,7 +1053,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Project: {json.dumps(response, indent=2)}")]
 
         elif name == "list_projects":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/project.list",
                 method="POST",
                 data=arguments
@@ -1034,7 +1061,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Projects: {json.dumps(response, indent=2)}")]
 
         elif name == "search_projects":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/project.search",
                 method="POST",
                 data=arguments
@@ -1044,7 +1071,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
         elif name == "list_custom_fields":
             # Client-side objectType filter, since /customField.list doesn't support it server-side.
             payload = {k: v for k, v in (arguments or {}).items() if k != "objectType"}
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/customField.list",
                 method="POST",
                 data=payload
@@ -1056,7 +1083,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Custom fields: {json.dumps(response, indent=2)}")]
 
         elif name == "get_custom_field":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/customField.info",
                 method="POST",
                 data=arguments
@@ -1064,7 +1091,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Custom field: {json.dumps(response, indent=2)}")]
 
         elif name == "create_custom_field":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/customField.create",
                 method="POST",
                 data=arguments
@@ -1072,7 +1099,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Custom field created: {json.dumps(response, indent=2)}")]
 
         elif name == "set_custom_field_value":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/customField.setValue",
                 method="POST",
                 data=arguments
@@ -1080,7 +1107,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Custom field value set: {json.dumps(response, indent=2)}")]
 
         elif name == "create_job":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/job.create",
                 method="POST",
                 data=arguments
@@ -1088,7 +1115,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Created job: {json.dumps(response, indent=2)}")]
             
         elif name == "search_jobs":
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/job.search",
                 method="POST",
                 data=arguments
@@ -1098,7 +1125,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
         elif name == "list_jobs":
             payload = dict(arguments) if arguments else {}
             payload.setdefault("status", ["Open"])
-            response = ashby_client._make_request(
+            response = await ashby_client._make_request(
                 "/job.list",
                 method="POST",
                 data=payload
@@ -1106,96 +1133,114 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.T
             return [types.TextContent(type="text", text=f"Job list: {json.dumps(response, indent=2)}")]
 
         elif name == "get_job":
-            response = ashby_client._make_request("/job.info", method="POST", data=arguments)
+            response = await ashby_client._make_request("/job.info", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Job: {json.dumps(response, indent=2)}")]
 
         elif name == "update_job":
-            response = ashby_client._make_request("/job.update", method="POST", data=arguments)
+            response = await ashby_client._make_request("/job.update", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Job updated: {json.dumps(response, indent=2)}")]
 
         elif name == "set_job_status":
-            response = ashby_client._make_request("/job.setStatus", method="POST", data=arguments)
+            response = await ashby_client._make_request("/job.setStatus", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Job status set: {json.dumps(response, indent=2)}")]
 
         elif name == "create_application":
-            response = ashby_client._make_request("/application.create", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.create", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Created application: {json.dumps(response, indent=2)}")]
 
         elif name == "list_applications":
-            response = ashby_client._make_request("/application.list", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.list", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Applications: {json.dumps(response, indent=2)}")]
 
         elif name == "get_application":
-            response = ashby_client._make_request("/application.info", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.info", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Application: {json.dumps(response, indent=2)}")]
 
         elif name == "update_application":
-            response = ashby_client._make_request("/application.update", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.update", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Application updated: {json.dumps(response, indent=2)}")]
 
         elif name == "change_application_stage":
-            response = ashby_client._make_request("/application.change_stage", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.change_stage", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Stage changed: {json.dumps(response, indent=2)}")]
 
         elif name == "change_application_source":
-            response = ashby_client._make_request("/application.change_source", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.change_source", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Source changed: {json.dumps(response, indent=2)}")]
 
         elif name == "transfer_application":
-            response = ashby_client._make_request("/application.transfer", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.transfer", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Application transferred: {json.dumps(response, indent=2)}")]
 
         elif name == "add_application_hiring_team_member":
-            response = ashby_client._make_request("/application.addHiringTeamMember", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.addHiringTeamMember", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Hiring team member added: {json.dumps(response, indent=2)}")]
 
         elif name == "remove_application_hiring_team_member":
-            response = ashby_client._make_request("/application.removeHiringTeamMember", method="POST", data=arguments)
+            response = await ashby_client._make_request("/application.removeHiringTeamMember", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Hiring team member removed: {json.dumps(response, indent=2)}")]
 
         elif name == "get_interview":
-            response = ashby_client._make_request("/interview.info", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interview.info", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview: {json.dumps(response, indent=2)}")]
 
         elif name == "list_interviews":
-            response = ashby_client._make_request("/interview.list", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interview.list", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interviews: {json.dumps(response, indent=2)}")]
 
         elif name == "create_interview_schedule":
-            response = ashby_client._make_request("/interviewSchedule.create", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewSchedule.create", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview scheduled: {json.dumps(response, indent=2)}")]
 
         elif name == "list_interview_schedules":
-            response = ashby_client._make_request("/interviewSchedule.list", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewSchedule.list", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview schedules: {json.dumps(response, indent=2)}")]
 
         elif name == "update_interview_schedule":
-            response = ashby_client._make_request("/interviewSchedule.update", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewSchedule.update", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview schedule updated: {json.dumps(response, indent=2)}")]
 
         elif name == "cancel_interview_schedule":
-            response = ashby_client._make_request("/interviewSchedule.cancel", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewSchedule.cancel", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview schedule cancelled: {json.dumps(response, indent=2)}")]
 
         elif name == "list_interview_events":
-            response = ashby_client._make_request("/interviewEvent.list", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewEvent.list", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview events: {json.dumps(response, indent=2)}")]
 
         elif name == "list_interview_plans":
-            response = ashby_client._make_request("/interviewPlan.list", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewPlan.list", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview plans: {json.dumps(response, indent=2)}")]
 
         elif name == "list_interview_stages":
-            response = ashby_client._make_request("/interviewStage.list", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewStage.list", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview stages: {json.dumps(response, indent=2)}")]
 
         elif name == "get_interview_stage":
-            response = ashby_client._make_request("/interviewStage.info", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewStage.info", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview stage: {json.dumps(response, indent=2)}")]
 
         elif name == "list_interview_stage_groups":
-            response = ashby_client._make_request("/interviewStageGroup.list", method="POST", data=arguments)
+            response = await ashby_client._make_request("/interviewStageGroup.list", method="POST", data=arguments)
             return [types.TextContent(type="text", text=f"Interview stage groups: {json.dumps(response, indent=2)}")]
+
+        elif name == "list_all_candidates":
+            all_results = []
+            payload: dict = {"limit": 100}
+            if arguments and "syncToken" in arguments:
+                payload["syncToken"] = arguments["syncToken"]
+            for _ in range(50):  # cap at 50 pages (5 000 candidates)
+                page = await ashby_client._make_request("/candidate.list", method="POST", data=payload)
+                all_results.extend(page.get("results", []))
+                if not page.get("moreDataAvailable") or not page.get("nextCursor"):
+                    break
+                payload["cursor"] = page["nextCursor"]
+            return [types.TextContent(type="text", text=f"All candidates: {json.dumps({'results': all_results, 'total': len(all_results)}, indent=2)}")]
+
+        elif name == "list_sources":
+            payload = {"includeArchived": (arguments or {}).get("includeArchived", False)}
+            response = await ashby_client._make_request("/source.list", method="POST", data=payload)
+            return [types.TextContent(type="text", text=f"Sources: {json.dumps(response, indent=2)}")]
 
         else:
             raise ValueError(f"Unknown tool: {name}")

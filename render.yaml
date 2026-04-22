@@ -11,7 +11,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -e .
-    startCommand: ashby
+    startCommand: ashby-mcp
     healthCheckPath: /healthz
     envVars:
       - key: MCP_TRANSPORT

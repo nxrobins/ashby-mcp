@@ -2,17 +2,18 @@
 
 > Forked from [thnico/MCP-Ashby](https://github.com/thz/MCP-Ashby) — thanks to Nicolas Thouzeau for the original implementation.
 
-A Model Context Protocol (MCP) server that exposes Ashby ATS operations to Claude. Point Claude Code (or any MCP-compatible client) at this server and you can manage candidates, jobs, applications, interviews, projects, and custom fields in natural language.
+A Model Context Protocol (MCP) server that exposes Ashby ATS operations to Claude. Point Claude Code (or any MCP-compatible client) at this server and you can manage candidates, jobs, applications, interviews, projects, sources, and custom fields in natural language.
 
 ## What's included
 
-42 tools across six areas:
+44 tools across seven areas:
 
-- **Candidates** — create, search, list, get, update, notes, tags, projects, client info, anonymize, resume + file upload
+- **Candidates** — create, search, list, list all (auto-paginated), get, update, notes, tags, projects, client info, anonymize, resume + file upload
 - **Jobs** — create, search, list, get, update, set status (Open/Closed/Archived/Draft)
 - **Applications** — create, list, get, update, change stage, change source, transfer, add/remove hiring team members
 - **Interviews** — list interview-type definitions, schedule interview events, list/update/cancel schedules
 - **Projects** — get, list, search (useful for attaching candidates)
+- **Sources** — list (discover sourceIds for `create_candidate` and `change_application_source`)
 - **Custom fields** — list (with client-side objectType filter), get, create, setValue (polymorphic by field type)
 
 ## Team setup (2 commands)
@@ -39,12 +40,26 @@ That's it. Restart Claude Code, then run `claude mcp list` — you should see `a
 
 ### Using it
 
-In any Claude Code session, ask things like:
-- *"List open jobs in Ashby"*
-- *"Find all candidates tagged as referrals"*
-- *"Show me the Candidate custom fields"*
-- *"Move application `<id>` to the Offer stage"*
-- *"Schedule an interview for application `<id>` tomorrow at 2pm with bob@company.com"*
+The point of plugging Ashby into an LLM isn't the CRUD — it's the kind of workflows a recruiter can't reasonably do in the Ashby UI. A few things this is actually good for:
+
+**Re-engagement campaigns**
+- *"Find every candidate who reached onsite for any Engineering role in the last 18 months and was archived with reason 'timing', then group them by the role they were closest to fit for."*
+- *"Pull silver-medalists from closed Sales roles in the last 12 months — I want to reconsider them for the new AE opening."*
+
+**Detailed reports with full context**
+- *"Build me a funnel report for Q1: apps → screens → onsites → offers → hires, broken down by source and by role. Include stage-to-stage conversion rates and flag any sources with <5% screen-to-onsite."*
+- *"For every Engineering offer in the last 6 months, give me days-in-each-stage, source, and whether there's a referral relationship."*
+
+**Narrative building on historical pipelines**
+- *"Walk me through how the Head of Product search actually played out — who we saw, where each drop-off happened, what the hiring team's written feedback looks like stage-to-stage, and where the eventual hire entered the process."*
+- *"Summarize the last three Design Lead searches as a case study — what was the source mix, how long did each take, what were the common archive reasons?"*
+
+**Personalized outreach**
+- *"Draft a re-engagement email for candidate `<id>` — reference their last application, the role they almost landed, and anything in the notes from the hiring manager that would ring true to them. Keep it to 120 words."*
+- *"Pull the top 10 archived-silver candidates for the Staff Eng role and draft a tailored outreach for each based on their notes, resume highlights, and stage they reached."*
+
+**Everyday operational asks** also work:
+- *"List open jobs in Ashby"*, *"Show me the Candidate custom fields"*, *"Move application `<id>` to the Offer stage"*, *"Schedule an interview for application `<id>` tomorrow at 2pm with bob@company.com"*
 
 ### Permissions note
 

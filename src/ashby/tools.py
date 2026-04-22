@@ -814,4 +814,26 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
+        types.Tool(
+            name="list_application_feedback",
+            description=(
+                "List interview feedback submissions for an application. "
+                "Each submission is a filled-out feedback form from one interviewer "
+                "after one interview event. Returns scores and free-text answers. "
+                "Use this to synthesize themes across an onsite, compare interviewer "
+                "reads, or audit hiring decisions. Typical flow: list_applications "
+                "or list_interview_schedules to find applicationIds, then this tool "
+                "per candidate."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "applicationId": {"type": "string"},
+                    "cursor": {"type": "string"},
+                    "syncToken": {"type": "string"},
+                    "limit": {"type": "integer"}
+                },
+                "required": ["applicationId"]
+            }
+        ),
     ]

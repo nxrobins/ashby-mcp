@@ -85,6 +85,7 @@ _SIMPLE: dict[str, tuple[str, str]] = {
     "list_interview_stages":      ("/interviewStage.list",        "Interview stages"),
     "get_interview_stage":        ("/interviewStage.info",        "Interview stage"),
     "list_interview_stage_groups": ("/interviewStageGroup.list",  "Interview stage groups"),
+    "list_application_feedback":  ("/applicationFeedback.list",   "Application feedback"),
 }
 
 

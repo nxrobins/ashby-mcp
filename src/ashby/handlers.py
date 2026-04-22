@@ -123,10 +123,12 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
     ]),
     "list_applications": ("Applications", [
         ("id", "id"),
+        ("candidate_id", "candidate.id"),
         ("candidate", "candidate.name"),
         ("job", "job.title"),
         ("stage", "currentInterviewStage.title"),
         ("status", "status"),
+        ("archive_reason", "archiveReason.title"),
         ("source", "source.title"),
         ("created", "createdAt"),
     ]),

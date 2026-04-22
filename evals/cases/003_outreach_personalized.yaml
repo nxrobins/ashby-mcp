@@ -1,0 +1,25 @@
+name: "Personalized outreach to a silver-medal candidate"
+prompt: |
+  Draft a short re-engagement email (120 words max) to candidate c_sales_01.
+  Reference the role they almost landed, the reason we didn't close last
+  time, and anything from the hiring-manager notes that would ring true.
+  Sign it from "The Ashby Talent Team".
+
+structural_checks:
+  tools_called:
+    - get_candidate
+    - list_candidate_notes
+  must_include:
+    - Priya                       # the candidate's first name
+    - Ashby Talent Team           # the signoff
+  must_exclude:
+    - c_sales_02                  # shouldn't namedrop other candidates
+
+judge:
+  rubric: |
+    - Does the email reference something specific from the notes
+      (the $2M pipeline, comp band, or on-hire retro)?
+    - Does it acknowledge the prior conversation honestly rather than
+      pretending it's cold outreach?
+    - Is the tone warm but professional?
+    - Does it stay close to 120 words?

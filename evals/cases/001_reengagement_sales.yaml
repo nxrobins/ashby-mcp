@@ -1,0 +1,28 @@
+name: "Re-engagement: silver-medal Sales candidates"
+prompt: |
+  We're hiring a Senior Account Executive and want to revisit candidates
+  who reached Onsite or Offer stage for our previous Account Executive role
+  and were archived for reasons OTHER than performance. Give me a ranked
+  shortlist with a one-line rationale each, and cite the candidate ID so
+  I can pull them up in Ashby.
+
+# Any of these tools is a reasonable way to gather evidence.
+# The agent must at minimum reach the applications list.
+structural_checks:
+  tools_called:
+    - list_applications
+  must_include:
+    - c_sales_01     # Priya Raman — archived Timing
+    - c_sales_02     # Marcus Webb — archived Comp
+  # NOTE: we do NOT `must_exclude: [c_sales_04]` here. A good agent will
+  # *name* c_sales_04 to explain why it's excluded ("Devon was archived
+  # for performance, so skipped"), which substring-matching would flag
+  # as a failure. Whether Devon is correctly omitted from the shortlist
+  # is judged below.
+
+judge:
+  rubric: |
+    - Does the answer specifically identify archived-non-performance candidates?
+    - Does it cite candidate IDs?
+    - Is there a rationale tied to each candidate's actual archive reason?
+    - Does it correctly exclude the performance-archived candidate (c_sales_04) from the shortlist?

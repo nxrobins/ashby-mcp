@@ -17,3 +17,7 @@ wheels/
 
 # Claude Code local settings (per-user)
 .claude/
+
+# Eval run artifacts (trace dumps, etc.)
+evals/last_trace.json
+evals/*_trace.json

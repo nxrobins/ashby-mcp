@@ -1,0 +1,22 @@
+name: "Narrative: how the Design Lead search played out"
+prompt: |
+  Walk me through how our Design Lead search played out. Who did we see,
+  who was hired, who dropped out and why. Keep it under 150 words and
+  reference each candidate by ID.
+
+structural_checks:
+  tools_called:
+    - list_applications
+  must_include:
+    - j_design_lead     # the job itself
+    - c_design_02       # hired
+    - c_design_03       # declined offer
+  must_exclude:
+    - c_eng_01          # leakage from a different search would be a failure
+
+judge:
+  rubric: |
+    - Does the narrative cover the full pipeline (hire + the candidates who dropped out)?
+    - Does it name the specific archive reasons (offer declined, role-scope mismatch)?
+    - Is the writing actually narrative, not a JSON-dump?
+    - Does it stay under ~150 words?

@@ -35,6 +35,10 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-httpx>=0.30",
 ]
+evals = [
+    "anthropic>=0.39",
+    "pyyaml>=6.0",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

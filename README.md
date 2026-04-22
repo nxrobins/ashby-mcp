@@ -31,7 +31,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```bash
 claude mcp add ashby -s user \
   -e ASHBY_API_KEY=PASTE_TEAM_KEY_HERE \
-  -- uvx --from git+https://github.com/nxrobins/ashby-mcp ashby
+  -- uvx --from git+https://github.com/nxrobins/ashby-mcp ashby-mcp
 ```
 
 That's it. Restart Claude Code, then run `claude mcp list` — you should see `ashby: ✓ Connected`. The Ashby tools will be available in every Claude Code session, not just one project.

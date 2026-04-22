@@ -14,11 +14,18 @@ entry in `_SPECIAL`.
 import json
 import logging
 import os
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Sequence
 
 import mcp.types as types
 
 from .client import ashby_client
+from .formatting import (
+    Column,
+    format_json,
+    format_list,
+    format_record,
+    output_format,
+)
 
 logger = logging.getLogger("ashby.handlers")
 
@@ -81,8 +88,187 @@ _SIMPLE: dict[str, tuple[str, str]] = {
 }
 
 
-def _text(prefix: str, payload: Any) -> list[types.TextContent]:
-    return [types.TextContent(type="text", text=f"{prefix}: {json.dumps(payload, indent=2)}")]
+# ---------------------------------------------------------------------------
+# Output formatting — per-tool column maps feed formatting.py to turn
+# verbose Ashby JSON into compact markdown tables (for lists) or labeled
+# sections (for single records). Tools without a map fall back to JSON.
+# Set ASHBY_OUTPUT=json to disable formatting entirely.
+# ---------------------------------------------------------------------------
+
+_CANDIDATE_COLS: Sequence[Column] = [
+    ("id", "id"),
+    ("name", "name"),
+    ("email", "primaryEmailAddress.value"),
+    ("source", "source.title"),
+    ("created", "createdAt"),
+]
+
+_LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
+    "list_candidates":      ("Candidates", _CANDIDATE_COLS),
+    "list_all_candidates":  ("All candidates", _CANDIDATE_COLS),
+    "search_candidates":    ("Candidate search results", _CANDIDATE_COLS),
+    "list_jobs": ("Jobs", [
+        ("id", "id"),
+        ("title", "title"),
+        ("status", "status"),
+        ("location", "locations.0.locationName"),
+        ("department", "department.name"),
+        ("updated", "updatedAt"),
+    ]),
+    "search_jobs": ("Job search results", [
+        ("id", "id"),
+        ("title", "title"),
+        ("status", "status"),
+        ("location", "locations.0.locationName"),
+    ]),
+    "list_applications": ("Applications", [
+        ("id", "id"),
+        ("candidate", "candidate.name"),
+        ("job", "job.title"),
+        ("stage", "currentInterviewStage.title"),
+        ("status", "status"),
+        ("source", "source.title"),
+        ("created", "createdAt"),
+    ]),
+    "list_projects": ("Projects", [
+        ("id", "id"),
+        ("title", "title"),
+        ("archived", "isArchived"),
+    ]),
+    "search_projects": ("Project search results", [
+        ("id", "id"),
+        ("title", "title"),
+        ("archived", "isArchived"),
+    ]),
+    "list_sources": ("Sources", [
+        ("id", "id"),
+        ("title", "title"),
+        ("type", "sourceType.title"),
+        ("archived", "isArchived"),
+    ]),
+    "list_candidate_tags": ("Candidate tags", [
+        ("id", "id"),
+        ("title", "title"),
+        ("archived", "isArchived"),
+    ]),
+    "list_custom_fields": ("Custom fields", [
+        ("id", "id"),
+        ("title", "title"),
+        ("type", "fieldType"),
+        ("object", "objectType"),
+        ("archived", "isArchived"),
+    ]),
+    "list_interviews": ("Interviews", [
+        ("id", "id"),
+        ("title", "title"),
+        ("type", "type"),
+        ("duration", "duration"),
+    ]),
+    "list_interview_plans": ("Interview plans", [
+        ("id", "id"),
+        ("title", "title"),
+        ("archived", "isArchived"),
+    ]),
+    "list_interview_stages": ("Interview stages", [
+        ("id", "id"),
+        ("title", "title"),
+        ("type", "type"),
+        ("order", "orderInInterviewPlan"),
+    ]),
+    "list_interview_stage_groups": ("Interview stage groups", [
+        ("id", "id"),
+        ("title", "title"),
+        ("order", "orderInInterviewPlan"),
+    ]),
+    "list_interview_schedules": ("Interview schedules", [
+        ("id", "id"),
+        ("applicationId", "applicationId"),
+        ("stage", "interviewStage.title"),
+        ("created", "createdAt"),
+    ]),
+    "list_interview_events": ("Interview events", [
+        ("id", "id"),
+        ("interview", "interview.title"),
+        ("start", "startTime"),
+        ("end", "endTime"),
+        ("status", "status"),
+    ]),
+    "list_candidate_notes": ("Candidate notes", [
+        ("id", "id"),
+        ("createdAt", "createdAt"),
+        ("author", "createdByUser.email"),
+        ("note", "note"),
+    ]),
+}
+
+_RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
+    "get_candidate": ("name", [
+        ("email",       "primaryEmailAddress.value"),
+        ("phone",       "primaryPhoneNumber.value"),
+        ("source",      "source.title"),
+        ("credited to", "creditedToUser.email"),
+        ("location",    lambda r: ", ".join(
+            v for v in [
+                (r.get("location") or {}).get("city"),
+                (r.get("location") or {}).get("region"),
+                (r.get("location") or {}).get("country"),
+            ] if v
+        ) or "—"),
+        ("linkedin",    "linkedInUrl"),
+        ("tags",        "tags"),
+        ("created",     "createdAt"),
+    ]),
+    "get_job": ("title", [
+        ("status",     "status"),
+        ("department", "department.name"),
+        ("location",   "locations.0.locationName"),
+        ("created",    "createdAt"),
+    ]),
+    "get_application": ("candidate.name", [
+        ("job",     "job.title"),
+        ("stage",   "currentInterviewStage.title"),
+        ("status",  "status"),
+        ("source",  "source.title"),
+        ("created", "createdAt"),
+    ]),
+    "get_project": ("title", [
+        ("archived", "isArchived"),
+        ("jobs",     "associatedJobIds"),
+    ]),
+    "get_custom_field": ("title", [
+        ("type",     "fieldType"),
+        ("object",   "objectType"),
+        ("archived", "isArchived"),
+    ]),
+    "get_interview_stage": ("title", [
+        ("type",  "type"),
+        ("order", "orderInInterviewPlan"),
+    ]),
+    "get_interview": ("title", [
+        ("type",     "type"),
+        ("duration", "duration"),
+    ]),
+}
+
+
+def _render(tool_name: str, payload: Any) -> str:
+    """Render an Ashby response for LLM consumption (markdown or JSON)."""
+    if output_format() == "json":
+        return format_json(payload)
+    if fmt := _LIST_FORMATS.get(tool_name):
+        title, columns = fmt
+        return format_list(payload, title, columns)
+    if fmt := _RECORD_FORMATS.get(tool_name):
+        title_acc, fields = fmt
+        # Ashby wraps single-object responses as {success, results: {...}}.
+        # Unwrap so the configured accessors see the record directly.
+        record = payload.get("results") if isinstance(payload, dict) and isinstance(payload.get("results"), dict) else payload
+        return format_record(record, title_acc, fields)
+    return format_json(payload)
+
+
+def _text(tool_name: str, prefix: str, payload: Any) -> list[types.TextContent]:
+    return [types.TextContent(type="text", text=f"{prefix}: {_render(tool_name, payload)}")]
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +281,7 @@ async def _list_jobs(arguments: dict) -> list[types.TextContent]:
     payload = dict(arguments) if arguments else {}
     payload.setdefault("status", ["Open"])
     response = await ashby_client._make_request("/job.list", method="POST", data=payload)
-    return _text("Job list", response)
+    return _text("list_jobs", "Job list", response)
 
 
 async def _list_custom_fields(arguments: dict) -> list[types.TextContent]:
@@ -107,7 +293,7 @@ async def _list_custom_fields(arguments: dict) -> list[types.TextContent]:
     if obj_type and isinstance(response, dict) and isinstance(response.get("results"), list):
         filtered = [f for f in response["results"] if f.get("objectType") == obj_type]
         response = {**response, "results": filtered, "filteredBy": {"objectType": obj_type}}
-    return _text("Custom fields", response)
+    return _text("list_custom_fields", "Custom fields", response)
 
 
 async def _upload_candidate_resume(arguments: dict) -> list[types.TextContent]:
@@ -118,7 +304,7 @@ async def _upload_candidate_resume(arguments: dict) -> list[types.TextContent]:
             data={"candidateId": arguments["candidateId"]},
             files={"resume": (os.path.basename(path), f)},
         )
-    return _text("Resume uploaded", response)
+    return _text("upload_candidate_resume", "Resume uploaded", response)
 
 
 async def _upload_candidate_file(arguments: dict) -> list[types.TextContent]:
@@ -129,7 +315,7 @@ async def _upload_candidate_file(arguments: dict) -> list[types.TextContent]:
             data={"candidateId": arguments["candidateId"]},
             files={"file": (os.path.basename(path), f)},
         )
-    return _text("File uploaded", response)
+    return _text("upload_candidate_file", "File uploaded", response)
 
 
 async def _list_all_candidates(arguments: dict) -> list[types.TextContent]:
@@ -144,13 +330,13 @@ async def _list_all_candidates(arguments: dict) -> list[types.TextContent]:
         if not page.get("moreDataAvailable") or not page.get("nextCursor"):
             break
         payload["cursor"] = page["nextCursor"]
-    return _text("All candidates", {"results": all_results, "total": len(all_results)})
+    return _text("list_all_candidates", "All candidates", {"results": all_results, "total": len(all_results)})
 
 
 async def _list_sources(arguments: dict) -> list[types.TextContent]:
     payload = {"includeArchived": (arguments or {}).get("includeArchived", False)}
     response = await ashby_client._make_request("/source.list", method="POST", data=payload)
-    return _text("Sources", response)
+    return _text("list_sources", "Sources", response)
 
 
 _SPECIAL: dict[str, Callable[[dict], Awaitable[list[types.TextContent]]]] = {
@@ -177,7 +363,7 @@ async def dispatch(name: str, arguments: dict[str, Any]) -> list[types.TextConte
         if route := _SIMPLE.get(name):
             endpoint, prefix = route
             response = await ashby_client._make_request(endpoint, method="POST", data=arguments)
-            return _text(prefix, response)
+            return _text(name, prefix, response)
         raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
         logger.warning("tool %s failed: %s", name, e)

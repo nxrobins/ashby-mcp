@@ -13,6 +13,9 @@ import os
 import pytest
 
 os.environ.setdefault("ASHBY_API_KEY", "test-key-not-real")
+# Routing tests assert on structured JSON output. Formatter tests opt into
+# markdown mode via `monkeypatch.setenv("ASHBY_OUTPUT", "markdown")`.
+os.environ.setdefault("ASHBY_OUTPUT", "json")
 
 from ashby.client import ashby_client as _module_client  # noqa: E402
 from ashby.handlers import dispatch  # noqa: E402

@@ -25,6 +25,9 @@ Homepage = "https://github.com/nxrobins/ashby-mcp"
 
 [project.scripts]
 ashby-mcp = "src.ashby:main"
+# Legacy alias — existing MCP configurations still call `ashby`.
+# Safe to remove once all installs are updated.
+ashby = "src.ashby:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

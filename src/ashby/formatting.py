@@ -52,18 +52,27 @@ def get_value(obj: Any, accessor: Accessor, default: Any = "—") -> Any:
     return default if cur is None or cur == "" else cur
 
 
-def _cell(v: Any) -> str:
-    """Render a Python value as a single markdown-table cell."""
+def _cell(v: Any, max_len: int = 60, max_list_items: int = 3) -> str:
+    """Render a Python value as a single markdown cell.
+
+    `max_len` caps single-string output. Tables pass the default 60 (a
+    cell that wraps into multiple visual lines is harder to scan than
+    one that gets a `…` truncation). Records pass a much larger value
+    because long-form fields (notes, summaries, multi-name lists) are
+    the whole point of a record view.
+    """
     if isinstance(v, bool):
         return "yes" if v else "no"
     if isinstance(v, list):
         if not v:
             return "—"
-        items = [str(x) for x in v[:3]]
+        items = [str(x) for x in v[:max_list_items]]
         head = ", ".join(items)
-        return head + ("…" if len(v) > 3 else "")
+        return head + ("…" if len(v) > max_list_items else "")
     s = str(v).replace("|", "\\|").replace("\n", " ").strip()
-    return s if len(s) <= 60 else s[:57] + "…"
+    if len(s) <= max_len:
+        return s
+    return s[: max(0, max_len - 3)] + "…"
 
 
 def table(rows: Sequence[Any], columns: Sequence[Column]) -> str:
@@ -105,7 +114,12 @@ def format_list(response: Any, title: str, columns: Sequence[Column]) -> str:
 
 
 def format_record(record: Any, title_accessor: Accessor, fields: Sequence[Column]) -> str:
-    """Format a single Ashby record as a labeled markdown section."""
+    """Format a single Ashby record as a labeled markdown section.
+
+    Records get a much larger per-field budget than table cells (1200 chars,
+    20 list items) — they're typically used to inspect ONE entity in depth,
+    where notes / summaries / skill-lists are the point.
+    """
     if not isinstance(record, dict):
         return json.dumps(record, indent=2)
     title = get_value(record, title_accessor, default=str(record.get("id", "Record")))
@@ -115,7 +129,9 @@ def format_record(record: Any, title_accessor: Accessor, fields: Sequence[Column
         heading += f" (`{rid}`)"
     lines = [heading, ""]
     for label, acc in fields:
-        lines.append(f"- **{label}**: {_cell(get_value(record, acc))}")
+        lines.append(
+            f"- **{label}**: {_cell(get_value(record, acc), max_len=1200, max_list_items=20)}"
+        )
     return "\n".join(lines)
 
 

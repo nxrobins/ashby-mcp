@@ -99,6 +99,10 @@ _SIMPLE: dict[str, tuple[str, str]] = {
 _CANDIDATE_COLS: Sequence[Column] = [
     ("id", "id"),
     ("name", "name"),
+    ("position", "position"),
+    ("company", "company"),
+    ("school", "school"),
+    ("linkedin", "linkedInUrl"),
     ("email", "primaryEmailAddress.value"),
     ("source", "source.title"),
     ("created", "createdAt"),
@@ -126,6 +130,13 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
         ("id", "id"),
         ("candidate_id", "candidate.id"),
         ("candidate", "candidate.name"),
+        # Candidate-derived firmware-scoring signals — surfacing these on the
+        # list view lets a heuristic skim N applications with no per-row
+        # `get_candidate` calls.
+        ("position", "candidate.position"),
+        ("company", "candidate.company"),
+        ("school", "candidate.school"),
+        ("linkedin", "candidate.linkedInUrl"),
         ("job", "job.title"),
         ("stage", "currentInterviewStage.title"),
         ("status", "status"),
@@ -206,6 +217,14 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
 
 _RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
     "get_candidate": ("name", [
+        # Firmware-scoring signals first so a heuristic finds them at a glance.
+        ("position",    "position"),
+        ("company",     "company"),
+        ("school",      "school"),
+        ("linkedin",    "linkedInUrl"),
+        ("profile_url", "profileUrl"),
+        ("resume_id",   "resumeFileHandle.id"),
+        ("resume_name", "resumeFileHandle.name"),
         ("email",       "primaryEmailAddress.value"),
         ("phone",       "primaryPhoneNumber.value"),
         ("source",      "source.title"),
@@ -217,7 +236,6 @@ _RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
                 (r.get("location") or {}).get("country"),
             ] if v
         ) or "—"),
-        ("linkedin",    "linkedInUrl"),
         ("tags",        "tags"),
         ("created",     "createdAt"),
     ]),
@@ -228,11 +246,19 @@ _RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
         ("created",    "createdAt"),
     ]),
     "get_application": ("candidate.name", [
-        ("job",     "job.title"),
-        ("stage",   "currentInterviewStage.title"),
-        ("status",  "status"),
-        ("source",  "source.title"),
-        ("created", "createdAt"),
+        # Candidate-derived firmware-scoring signals — same as get_candidate.
+        ("position",    "candidate.position"),
+        ("company",     "candidate.company"),
+        ("school",      "candidate.school"),
+        ("linkedin",    "candidate.linkedInUrl"),
+        ("profile_url", "candidate.profileUrl"),
+        ("resume_id",   "candidate.resumeFileHandle.id"),
+        ("resume_name", "candidate.resumeFileHandle.name"),
+        ("job",         "job.title"),
+        ("stage",       "currentInterviewStage.title"),
+        ("status",      "status"),
+        ("source",      "source.title"),
+        ("created",     "createdAt"),
     ]),
     "get_project": ("title", [
         ("archived", "isArchived"),

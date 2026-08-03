@@ -16,9 +16,12 @@ dependencies = [
     # AttributeError at import — before the server can speak MCP. Clients see
     # only the stdio pipe close ("-32000: Connection closed"), with no hint that
     # a dependency moved, which is why this must be pinned here rather than at
-    # each install site. Raising the bound requires porting server.py to the
-    # 2.x API first.
-    "mcp>=1.29,<2",
+    # each install site. Deliberately an upper bound only, with no floor: core's
+    # apps/chippy/Dockerfile installs this package with `--with mcp==1.28.1`,
+    # and a floor above that would make those image builds unresolvable.
+    # Verified working on both 1.28.1 and 1.29.0. Raising the bound requires
+    # porting server.py to the 2.x API first.
+    "mcp<2",
     "httpx>=0.27",
     "tenacity>=8.0",
     "python-dotenv",

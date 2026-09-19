@@ -18,7 +18,7 @@ os.environ.setdefault("ASHBY_API_KEY", "test-key-not-real")
 os.environ.setdefault("ASHBY_OUTPUT", "json")
 
 from ashby.client import ashby_client as _module_client  # noqa: E402
-from ashby.handlers import dispatch  # noqa: E402
+from ashby.handlers import ToolError, dispatch  # noqa: E402
 
 # Hardening knobs read by policy.py / transport.py. Every test starts from
 # the permissive stdio defaults, whatever the developer's shell exports;
@@ -43,19 +43,28 @@ def call_tool():
     """Async helper that invokes the tool dispatcher and returns the
     parsed JSON body of its text response.
 
-    The dispatcher wraps every response as `[TextContent(text="<prefix>: <json>")]`.
-    We strip the prefix and return the decoded JSON so tests can assert on shape.
+    The dispatcher wraps every response as `[TextContent(text="<prefix>: <json>")]`
+    and raises `ToolError` — whose message is `"<prefix>: <detail>"` — on
+    failure. Either way we strip the prefix and return the decoded JSON so
+    tests can assert on shape; a detail that isn't JSON (HTTP errors,
+    unknown tools) comes back as the full error text. Tests about the
+    error/success distinction itself call `dispatch` directly under
+    `pytest.raises(ToolError)`.
     """
 
     async def _call(name: str, arguments: dict | None = None) -> dict | str:
-        result = await dispatch(name, arguments or {})
-        assert len(result) == 1
-        text = result[0].text
+        try:
+            result = await dispatch(name, arguments or {})
+        except ToolError as e:
+            text = str(e)
+        else:
+            assert len(result) == 1
+            text = result[0].text
         _, _, body = text.partition(": ")
         try:
             return json.loads(body)
         except json.JSONDecodeError:
-            # Error branch returns plain text; surface it directly.
+            # Error text that isn't a JSON envelope; surface it directly.
             return text
 
     return _call

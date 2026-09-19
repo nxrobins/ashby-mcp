@@ -39,6 +39,11 @@ async def handle_list_tools():
 
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict):
+    # A failed call raises `ToolError` out of this handler on purpose. The
+    # SDK (every mcp 1.x release) turns an exception raised here into
+    # `CallToolResult(isError=True)` carrying `str(exc)`; catching it and
+    # returning the message as content would make the failure look like a
+    # success to the client (`isError: false`).
     return await dispatch(name, arguments)
 
 

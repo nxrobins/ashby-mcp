@@ -335,8 +335,10 @@ async def test_change_application_source(httpx_mock, call_tool):
 
 async def test_transfer_application(httpx_mock, call_tool):
     _ok(httpx_mock, "/application.transfer")
-    await call_tool("transfer_application", {"applicationId": "a1", "jobId": "j2"})
-    assert _sent_body(httpx_mock) == {"applicationId": "a1", "jobId": "j2"}
+    # Ashby requires all four ids — see /application.transfer in openapi.json.
+    args = {"applicationId": "a1", "jobId": "j2", "interviewPlanId": "plan-2", "interviewStageId": "st-2"}
+    await call_tool("transfer_application", args)
+    assert _sent_body(httpx_mock) == args
 
 
 async def test_add_application_hiring_team_member(httpx_mock, call_tool):
@@ -467,11 +469,39 @@ async def test_list_all_candidates_single_page(httpx_mock, call_tool):
     httpx_mock.add_response(
         method="POST",
         url=f"{BASE}/candidate.list",
-        json={"success": True, "results": [{"id": "c1"}, {"id": "c2"}], "moreDataAvailable": False},
+        json={"success": True, "results": [{"id": "c1"}, {"id": "c2"}], "moreDataAvailable": False,
+              "syncToken": "sync-1"},
     )
     result = await call_tool("list_all_candidates", {})
     assert result["total"] == 2
     assert len(result["results"]) == 2
+    assert result["truncated"] is False
+    assert "nextCursor" not in result
+    # A completed walk hands back Ashby's fresh sync token for incremental re-runs.
+    assert result["syncToken"] == "sync-1"
+
+
+async def test_list_all_candidates_marks_truncation_at_page_cap(httpx_mock, call_tool, monkeypatch):
+    """When the page cap is reached with data still remaining, the response
+    says so and hands back the cursor to continue from."""
+    import ashby.handlers as handlers
+
+    monkeypatch.setattr(handlers, "_LIST_ALL_MAX_PAGES", 2)
+    for i in (1, 2):
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{BASE}/candidate.list",
+            json={"success": True, "results": [{"id": f"c{i}"}], "moreDataAvailable": True,
+                  "nextCursor": f"cursor-{i + 1}", "syncToken": "partial"},
+        )
+    result = await call_tool("list_all_candidates", {})
+    assert len(httpx_mock.get_requests()) == 2  # stopped at the cap
+    assert result["total"] == 2
+    assert result["truncated"] is True
+    assert result["moreDataAvailable"] is True
+    assert result["nextCursor"] == "cursor-3"
+    # A partial walk must not advertise a sync token as if the sync completed.
+    assert "syncToken" not in result
 
 
 async def test_list_all_candidates_auto_paginates(httpx_mock, call_tool):

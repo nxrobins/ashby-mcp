@@ -127,6 +127,10 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
                 {
                     "id": "c1",
                     "name": "Ada Lovelace",
+                    "position": "Analyst",
+                    "company": "Babbage & Co",
+                    "school": "Independent",
+                    "linkedInUrl": "https://linkedin.com/in/ada",
                     "primaryEmailAddress": {"value": "ada@example.com"},
                     "source": {"title": "LinkedIn"},
                     "createdAt": "2024-12-01T10:00:00Z",
@@ -144,11 +148,54 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
     )
     text = await _call_raw("list_candidates", {"limit": 2})
     assert "## Candidates (2)" in text
-    assert "| id | name | email | source | created |" in text
-    assert "| c1 | Ada Lovelace | ada@example.com | LinkedIn |" in text
-    assert "| c2 | Alan Turing | alan@example.com | Referral |" in text
+    assert "| id | name | position | company | school | linkedin | email | source | created |" in text
+    assert (
+        "| c1 | Ada Lovelace | Analyst | Babbage & Co | Independent | https://linkedin.com/in/ada "
+        "| ada@example.com | LinkedIn |"
+    ) in text
+    # Profile fields absent on the record render as dashes, not blanks.
+    assert "| c2 | Alan Turing | — | — | — | — | alan@example.com | Referral |" in text
     # Make sure the verbose raw JSON envelope is NOT in the output.
     assert '"success": true' not in text
+
+
+async def test_list_all_candidates_truncation_is_called_out(httpx_mock, markdown_mode, monkeypatch):
+    """Hitting the page cap with data remaining must be visible in the
+    rendered markdown, not just in the JSON envelope."""
+    import ashby.handlers as handlers
+
+    monkeypatch.setattr(handlers, "_LIST_ALL_MAX_PAGES", 1)
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={
+            "success": True,
+            "results": [{"id": "c1", "name": "Ada Lovelace"}],
+            "moreDataAvailable": True,
+            "nextCursor": "cursor-2",
+        },
+    )
+    text = await _call_raw("list_all_candidates", {})
+    assert "## All candidates (1, more available)" in text
+    assert "Next cursor: `cursor-2`" in text
+    assert "Truncated at 1 results" in text
+
+
+async def test_list_all_candidates_complete_walk_has_no_truncation_note(httpx_mock, markdown_mode):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={
+            "success": True,
+            "results": [{"id": "c1", "name": "Ada Lovelace"}],
+            "moreDataAvailable": False,
+            "syncToken": "sync-abc",
+        },
+    )
+    text = await _call_raw("list_all_candidates", {})
+    assert "## All candidates (1)" in text
+    assert "Truncated" not in text
+    assert "Sync token: `sync-abc`" in text
 
 
 async def test_list_sources_table_uses_source_type(httpx_mock, markdown_mode):

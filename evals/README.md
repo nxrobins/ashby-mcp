@@ -28,7 +28,7 @@ uv run python -m evals.run --dump trace.json
 ASHBY_EVAL_VERBOSE=1 uv run python -m evals.run
 ```
 
-Exit code is `0` iff every case passed, so this slots into CI.
+Exit code is `0` iff every case passed, so the command can gate a CI job. There is no CI workflow in this repo yet — runs are manual for now; wire this in once one exists.
 
 ## How it works
 

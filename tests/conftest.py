@@ -20,6 +20,23 @@ os.environ.setdefault("ASHBY_OUTPUT", "json")
 from ashby.client import ashby_client as _module_client  # noqa: E402
 from ashby.handlers import ToolError, dispatch  # noqa: E402
 
+# Hardening knobs read by policy.py / transport.py. Every test starts from
+# the permissive stdio defaults, whatever the developer's shell exports;
+# tests that exercise a knob set it explicitly with monkeypatch.
+_POLICY_ENV = (
+    "MCP_TRANSPORT",
+    "ASHBY_READ_ONLY",
+    "ASHBY_UPLOAD_DIR",
+    "MCP_BEARER_TOKEN",
+    "MCP_ALLOW_INSECURE",
+)
+
+
+@pytest.fixture(autouse=True)
+def _default_policy(monkeypatch):
+    for name in _POLICY_ENV:
+        monkeypatch.delenv(name, raising=False)
+
 
 @pytest.fixture
 def call_tool():

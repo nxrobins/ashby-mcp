@@ -77,7 +77,7 @@ Everything is configured through environment variables. In Claude Code, pass the
 | `ASHBY_OUTPUT` | `markdown` | Tool output format. `markdown` renders list results as compact tables and single records as labeled sections — fewer tokens, easier to scan in a transcript. Set `json` to get Ashby's raw JSON envelope instead, e.g. for programmatic consumers or when you need a field the tables leave out. |
 | `MCP_TRANSPORT` | `stdio` | `stdio` for local clients such as Claude Code; `http` for the HTTP/SSE server used by Cowork / Render. |
 | `MCP_HOST`, `MCP_PORT` | `127.0.0.1`, `8000` | Bind address for the HTTP transport. `PORT` is honored as a fallback for `MCP_PORT` (the Render / Heroku / Fly convention). |
-| `MCP_BEARER_TOKEN` | unset | HTTP transport only. When set, every request must carry `Authorization: Bearer <token>`; leave unset only for local testing. |
+| `MCP_BEARER_TOKEN` | unset | HTTP transport only. Every request must carry `Authorization: Bearer <token>`. Required on any non-loopback bind: the server refuses to start without it. See the [Security note](#security-note) for `MCP_ALLOW_INSECURE`, `ASHBY_READ_ONLY` and `ASHBY_UPLOAD_DIR`. |
 
 For example, to register the server in Claude Code with raw JSON output:
 
@@ -109,6 +109,8 @@ A [`render.yaml`](render.yaml) blueprint is checked in — Render reads it and p
    # → {"ok":true,"auth_required":true}
    ```
 
+   If the service never becomes healthy, check its logs: without `MCP_BEARER_TOKEN` the server deliberately refuses to start (see [Security note](#security-note)). Consider adding `ASHBY_READ_ONLY=1` to the service's environment if teammates only need reporting.
+
 ### Per-teammate setup in Cowork
 
 1. In Cowork: **Customize → Connectors → Add custom connector**
@@ -123,6 +125,21 @@ The bearer token is the only thing standing between the public internet and your
 - Share via 1Password / Slack DM, not email or git.
 - Rotate by changing `MCP_BEARER_TOKEN` in Render's dashboard → teammates update their Cowork connector config.
 - Never log it, commit it, or put it in a docs page.
+
+The HTTP transport **fails closed**: if `MCP_BEARER_TOKEN` is unset or blank while `MCP_HOST` is anything other than loopback (`127.0.0.1`, `localhost`, `::1`), the server refuses to start with a clear error and exit code 1. A Render deploy that skipped the token therefore fails its health check instead of coming up open on the internet with a live Ashby key — look for `refusing to start the HTTP transport` in the service logs. Tokens are compared in constant time, and `/healthz` reports `"auth_required": true` whenever a token is enforced.
+
+Hardening knobs, all read from the environment:
+
+| Variable | Effect |
+|---|---|
+| `MCP_BEARER_TOKEN` | Required on any non-loopback bind (see above). Every `/sse` and `/messages/` request must send `Authorization: Bearer <token>`. |
+| `MCP_ALLOW_INSECURE=1` | Escape hatch: start without a token on a public bind anyway. Local testing only — never set it on Render. |
+| `ASHBY_READ_ONLY=1` | Removes every tool that writes to Ashby (create/update, `anonymize_candidate`, `set_job_status`, `change_application_stage`, `transfer_application`, `cancel_interview_schedule`, uploads, …) from the tool list, and rejects them if a client calls one anyway. Recommended for a shared Cowork deployment that only needs reporting. |
+| `ASHBY_UPLOAD_DIR` | Over HTTP the two upload tools are **off by default**: their `file_path` argument would otherwise let any token holder — or a prompt injection carried in a candidate's notes or resume — read arbitrary files from the server container (for example `/proc/self/environ`, which holds the Ashby key) and store them in Ashby. Setting this to a directory re-enables the upload tools and confines `file_path` to it; symlinks and `..` are resolved before the check. Over stdio (your own machine) uploads stay unrestricted unless you set it, in which case the same confinement applies. |
+
+Every tool also carries MCP tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`), so clients that honour them can ask before running a write and flag irreversible ones.
+
+Logging: uvicorn's per-request access log is disabled (each line would include the `?session_id=...` of a live MCP session), and Ashby error bodies are truncated to 500 characters in log lines because they can echo candidate data. The full error still reaches the caller.
 
 ### Why not a free Cloudflare quick tunnel?
 
@@ -164,15 +181,17 @@ src/ashby/
   tools.py               # tool schemas — the names, descriptions and inputSchemas clients see
   handlers.py            # dispatcher: tool name → Ashby endpoint (_SIMPLE) or custom handler (_SPECIAL)
   client.py              # AshbyClient — httpx, HTTP Basic auth, tenacity retries on 429/5xx
+  policy.py              # ASHBY_READ_ONLY / ASHBY_UPLOAD_DIR / transport-aware tool policy
   formatting.py          # markdown tables / records for LLM-friendly output (see ASHBY_OUTPUT)
-  transport.py           # stdio and HTTP+SSE transports, bearer auth, /healthz
+  transport.py           # stdio and HTTP+SSE transports — bearer auth, fail-closed startup, /healthz
 tests/
   conftest.py            # shared fixtures: mocked HTTP, dummy API key, JSON output mode
   test_routing.py        # one test per tool — endpoint hit and body sent
   test_formatting.py     # formatter unit tests + end-to-end markdown rendering
   test_error_handling.py # error bodies surfaced to the caller, missing key, logging
   test_tools.py          # registry ↔ handler consistency, README tool count, spec-required fields
-  test_transport.py      # advertised server name/version
+  test_policy.py         # read-only mode, upload confinement, tool annotations
+  test_transport.py      # HTTP auth, fail-closed startup, advertised server name/version
   test_live.py           # opt-in live smoke tests
 evals/                   # LLM-in-the-loop evals against a fake Ashby (see evals/README.md)
 openapi.json             # Ashby's full OpenAPI spec (reference for adding new tools)
@@ -182,7 +201,7 @@ render.yaml              # Render blueprint for the HTTP/SSE deployment
 ## Adding a new tool
 
 1. Find the endpoint in `openapi.json` (search for its path, e.g. `"/candidate.list"`) and note which request fields are `required`.
-2. Add a `types.Tool(name=..., description=..., inputSchema=...)` entry to `all_tools()` in `src/ashby/tools.py`. Mirror the spec's `required` list and don't offer parameters the endpoint doesn't accept.
+2. Add a `_tool(name=..., description=..., inputSchema=...)` entry to `_catalog()` in `src/ashby/tools.py` and classify it in `_HINTS` in the same file (`READ_ONLY`, `ADDITIVE`, `DESTRUCTIVE_IDEMPOTENT`, …) — the module fails to import until you do, because that classification is what `ASHBY_READ_ONLY` and the published tool annotations key off. Mirror the spec's `required` list and don't offer parameters the endpoint doesn't accept.
 3. Route it in `src/ashby/handlers.py`:
    - a plain POST of the arguments → one line in `_SIMPLE`: `"tool_name": ("/endpoint", "Response prefix")`
    - anything that reshapes the payload or response (client-side filters, auto-pagination, multipart uploads) → an async function plus an entry in `_SPECIAL`

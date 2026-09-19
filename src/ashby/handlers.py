@@ -9,6 +9,11 @@ client-side filtering) have their own async function in `_SPECIAL`.
 Adding a vanilla tool is a one-line addition to `_SIMPLE`. Adding a
 quirky tool is a function in the Special Handlers section plus one
 entry in `_SPECIAL`.
+
+Failures — an unknown tool, an HTTP error, an Ashby `success: false`
+envelope, an unexpected exception — raise `ToolError` out of `dispatch`
+rather than coming back as ordinary text content. The class docstring
+explains why that is what makes them real MCP errors.
 """
 
 import json
@@ -28,6 +33,39 @@ from .formatting import (
 )
 
 logger = logging.getLogger("ashby.handlers")
+
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+
+class ToolError(Exception):
+    """A tool invocation failed; `str(exc)` is the text the caller sees.
+
+    `dispatch` raises this for every failure instead of returning the
+    message as content. Propagating it out of the `@server.call_tool()`
+    handler is what makes the failure a real MCP error: every mcp 1.x
+    release turns an exception raised there into
+    `CallToolResult(isError=True, content=[TextContent(text=str(exc))])`,
+    so the human-readable message still reaches the model and it can
+    recover. (Returning a `CallToolResult` from the handler instead only
+    works on newer 1.x releases — mcp 1.1.2, the locked version, mangles
+    it into a pydantic validation error.)
+    """
+
+
+def _raise_if_ashby_error(tool_name: str, payload: Any) -> None:
+    """Surface Ashby's HTTP-200 error envelope verbatim, in any output mode.
+
+    Validation and permission failures come back as a 200 with
+    `{"success": false, "errors": [...], "errorInfo": {...}}`. Fed to the
+    markdown formatters, that renders as an empty table or a record of
+    `—` fields with the error text lost — so it is raised as an error
+    carrying the envelope as JSON (never a table) instead.
+    """
+    if isinstance(payload, dict) and payload.get("success") is False:
+        raise ToolError(f"Ashby returned an error for {tool_name}: {json.dumps(payload)}")
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +335,7 @@ def _render(tool_name: str, payload: Any) -> str:
 
 
 def _text(tool_name: str, prefix: str, payload: Any) -> list[types.TextContent]:
+    _raise_if_ashby_error(tool_name, payload)
     return [types.TextContent(type="text", text=f"{prefix}: {_render(tool_name, payload)}")]
 
 
@@ -355,6 +394,10 @@ async def _list_all_candidates(arguments: dict) -> list[types.TextContent]:
         payload["syncToken"] = arguments["syncToken"]
     for _ in range(50):
         page = await ashby_client._make_request("/candidate.list", method="POST", data=payload)
+        # An error page carries no `results`/`moreDataAvailable`, so without
+        # this it would read as an empty last page and end the loop with a
+        # silently truncated (or empty) list.
+        _raise_if_ashby_error("list_all_candidates", page)
         all_results.extend(page.get("results", []))
         if not page.get("moreDataAvailable") or not page.get("nextCursor"):
             break
@@ -384,7 +427,12 @@ _SPECIAL: dict[str, Callable[[dict], Awaitable[list[types.TextContent]]]] = {
 
 
 async def dispatch(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
-    """Route a tool invocation to its handler (table-lookup + fallback)."""
+    """Route a tool invocation to its handler (table-lookup + fallback).
+
+    Raises `ToolError` on any failure. Its message is the human-readable
+    explanation for the model; the exception type is how callers (the MCP
+    server, the eval runner, the tests) tell a failure from content.
+    """
     logger.info("dispatch %s", name)
     try:
         if handler := _SPECIAL.get(name):
@@ -394,6 +442,9 @@ async def dispatch(name: str, arguments: dict[str, Any]) -> list[types.TextConte
             response = await ashby_client._make_request(endpoint, method="POST", data=arguments)
             return _text(name, prefix, response)
         raise ValueError(f"Unknown tool: {name}")
+    except ToolError as e:
+        logger.warning("tool %s failed: %s", name, e)
+        raise
     except Exception as e:
         logger.warning("tool %s failed: %s", name, e)
-        return [types.TextContent(type="text", text=f"Error executing {name}: {str(e)}")]
+        raise ToolError(f"Error executing {name}: {e}") from e

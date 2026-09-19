@@ -12,6 +12,8 @@ import json
 
 import pytest
 
+from ashby.handlers import ToolError, dispatch
+
 BASE = "https://api.ashbyhq.com"
 
 
@@ -495,6 +497,26 @@ async def test_list_all_candidates_auto_paginates(httpx_mock, call_tool):
     assert second_body["cursor"] == "cursor-2"
 
 
+async def test_list_all_candidates_aborts_on_error_page(httpx_mock):
+    """An error envelope mid-pagination must abort and surface — not be
+    read as an empty final page that silently truncates the list."""
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={"success": True, "results": [{"id": "c1"}], "moreDataAvailable": True, "nextCursor": "cursor-2"},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={"success": False, "errors": ["invalid_cursor"]},
+    )
+    with pytest.raises(ToolError) as exc_info:
+        await dispatch("list_all_candidates", {})
+    assert str(exc_info.value).startswith("Ashby returned an error for list_all_candidates: ")
+    assert "invalid_cursor" in str(exc_info.value)
+    assert len(httpx_mock.get_requests()) == 2
+
+
 # ---------------------------------------------------------------------------
 # Behaviour — error paths and auth
 # ---------------------------------------------------------------------------
@@ -513,21 +535,26 @@ async def test_auth_uses_http_basic(httpx_mock, call_tool, ashby_client):
     assert sent_auth == expected
 
 
-async def test_error_response_surfaced_to_caller(httpx_mock, call_tool):
-    """Ashby's own error envelopes should flow through verbatim."""
+async def test_error_response_surfaced_to_caller(httpx_mock):
+    """Ashby reports validation/permission failures as HTTP 200 with
+    `success: false`. That must surface as a tool *error* carrying the
+    envelope verbatim — never as content that looks like a result. This
+    is JSON mode; markdown mode is covered in test_formatting.py."""
     httpx_mock.add_response(
         method="POST",
         url=f"{BASE}/candidate.search",
         json={"success": False, "errors": ["invalid_input"]},
         status_code=200,
     )
-    result = await call_tool("search_candidates", {"name": ""})
-    assert result == {"success": False, "errors": ["invalid_input"]}
+    with pytest.raises(ToolError) as exc_info:
+        await dispatch("search_candidates", {"name": ""})
+    text = str(exc_info.value)
+    assert text.startswith("Ashby returned an error for search_candidates: ")
+    assert json.loads(text.partition(": ")[2]) == {"success": False, "errors": ["invalid_input"]}
 
 
-async def test_unknown_tool_returns_error_text(call_tool):
-    """Dispatcher catches unknown names and returns an error string,
-    not a crash."""
-    result = await call_tool("definitely_not_a_tool", {})
-    assert isinstance(result, str)
-    assert "Unknown tool" in result
+async def test_unknown_tool_is_a_tool_error():
+    """Unknown names fail as a ToolError (→ MCP `isError: true`) with a
+    readable message — not a crash, and not a successful-looking string."""
+    with pytest.raises(ToolError, match="Unknown tool: definitely_not_a_tool"):
+        await dispatch("definitely_not_a_tool", {})

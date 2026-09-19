@@ -67,7 +67,7 @@ def _print_case(case: dict, result, g) -> None:
         mark = "✓" if g.judge_score >= 3 else "✗"
         print(f"  {mark} judge: {g.judge_score}/5 — {g.judge_reasoning}")
     if os.getenv("ASHBY_EVAL_VERBOSE"):
-        print("  tool calls:", [tc.name for tc in result.tool_calls])
+        print("  tool calls:", [tc.name + (" (error)" if tc.is_error else "") for tc in result.tool_calls])
         print("  final:", result.final_text[:400].replace("\n", " "))
 
 
@@ -105,7 +105,10 @@ async def _main_async(pattern: str | None, model: str, dump: str | None) -> int:
             "case": case["name"],
             "pass": g.overall_pass,
             "turns": result.turns,
-            "tool_calls": [{"name": tc.name, "input": tc.input} for tc in result.tool_calls],
+            "tool_calls": [
+                {"name": tc.name, "input": tc.input, "is_error": tc.is_error}
+                for tc in result.tool_calls
+            ],
             "final_text": result.final_text,
             "checks": [{"name": c.name, "pass": c.passed, "detail": c.detail} for c in g.checks],
             "judge_score": g.judge_score,

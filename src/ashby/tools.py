@@ -83,7 +83,13 @@ def all_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="list_all_candidates",
-            description="Fetch ALL candidates by auto-paginating through every page. Returns the complete list. Use list_candidates instead for large workspaces where you only need a single page.",
+            description=(
+                "Fetch candidates by auto-paginating /candidate.list, up to 50 pages "
+                "(5,000 candidates) in one call. If the workspace has more than that, "
+                "the response is marked `truncated: true` and includes `nextCursor` — "
+                "continue with list_candidates from that cursor. Use list_candidates "
+                "directly when you only need a single page."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -443,13 +449,25 @@ def all_tools() -> list[types.Tool]:
         # Job Management Tools
         types.Tool(
             name="create_job",
-            description="Create a new job. Requires `title`. Ashby uses IDs for team, location, and interview plan — discover them via list_departments / list_locations / list_interview_plans (not yet exposed) or via the Ashby UI.",
+            description=(
+                "Create a new job. Ashby requires `title`, `teamId`, and `locationId` — "
+                "the call fails without all three. Use list_interview_plans to discover a "
+                "`defaultInterviewPlanId` (needed before the job can be opened). Team and "
+                "location IDs come from the Ashby UI or an existing job (get_job); this "
+                "server does not expose department/location listing endpoints."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Job title"},
-                    "teamId": {"type": "string", "description": "Department/team id"},
-                    "locationId": {"type": "string", "description": "Primary location id"},
+                    "teamId": {
+                        "type": "string",
+                        "description": "Department/team id (required by Ashby)",
+                    },
+                    "locationId": {
+                        "type": "string",
+                        "description": "Primary location id (required by Ashby)",
+                    },
                     "defaultInterviewPlanId": {
                         "type": "string",
                         "description": "Required for the job to be opened",
@@ -460,19 +478,19 @@ def all_tools() -> list[types.Tool]:
                     },
                     "brandId": {"type": "string"},
                 },
-                "required": ["title"],
+                "required": ["title", "teamId", "locationId"],
             },
         ),
         types.Tool(
             name="search_jobs",
-            description="Search jobs by title (required). Use list_jobs to enumerate without a title.",
+            description=(
+                "Search jobs by title. `title` is the only filter Ashby's /job.search "
+                "accepts — use list_jobs to enumerate or filter by status."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string", "description": "Job title to search for"},
-                    "location": {"type": "string", "description": "Filter by location"},
-                    "department": {"type": "string", "description": "Filter by department"},
-                    "include_unlisted": {"type": "boolean", "description": "Include unlisted jobs"},
+                    "title": {"type": "string", "description": "Job title to search for"}
                 },
                 "required": ["title"],
             },
@@ -594,7 +612,11 @@ def all_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_application",
-            description="Fetch a single application by id. Use `expand` to include openings / form submissions / referrals.",
+            description=(
+                "Fetch a single application by id. Use `expand` to include openings / "
+                "form submissions / referrals (`referrals` is only accepted when fetching "
+                "by applicationId, not by submittedFormInstanceId)."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -661,17 +683,30 @@ def all_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="transfer_application",
-            description="Transfer an application to a different job.",
+            description=(
+                "Transfer an application to a different job. Ashby requires the target "
+                "job's interview plan and the stage to land in — discover them with "
+                "list_interview_plans and list_interview_stages first."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "applicationId": {"type": "string"},
-                    "jobId": {"type": "string"},
-                    "interviewPlanId": {"type": "string"},
-                    "interviewStageId": {"type": "string"},
+                    "jobId": {
+                        "type": "string",
+                        "description": "Job to transfer the application to",
+                    },
+                    "interviewPlanId": {
+                        "type": "string",
+                        "description": "Interview plan on the target job (required by Ashby)",
+                    },
+                    "interviewStageId": {
+                        "type": "string",
+                        "description": "Stage within that plan to place the application in (required by Ashby)",
+                    },
                     "startAutomaticActivities": {"type": "boolean", "description": "Default true"},
                 },
-                "required": ["applicationId", "jobId"],
+                "required": ["applicationId", "jobId", "interviewPlanId", "interviewStageId"],
             },
         ),
         types.Tool(

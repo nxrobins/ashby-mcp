@@ -9,7 +9,7 @@ Env vars:
   ASHBY_EVAL_MODEL        — default `claude-sonnet-4-6`
   ASHBY_EVAL_JUDGE_MODEL  — default `claude-haiku-4-5-20251001`
 
-Exit code is 0 if every case passed, 1 otherwise — so this slots into CI.
+Exit code is 0 if every case passed, 1 otherwise — suitable for gating a CI job.
 """
 
 from __future__ import annotations

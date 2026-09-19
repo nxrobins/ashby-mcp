@@ -6,15 +6,17 @@ A Model Context Protocol (MCP) server that exposes Ashby ATS operations to Claud
 
 ## What's included
 
-44 tools across seven areas:
+50 tools across seven areas:
 
-- **Candidates** — create, search, list, list all (auto-paginated), get, update, notes, tags, projects, client info, anonymize, resume + file upload
-- **Jobs** — create, search, list, get, update, set status (Open/Closed/Archived/Draft)
-- **Applications** — create, list, get, update, change stage, change source, transfer, add/remove hiring team members
-- **Interviews** — list interview-type definitions, schedule interview events, list/update/cancel schedules
-- **Projects** — get, list, search (useful for attaching candidates)
-- **Sources** — list (discover sourceIds for `create_candidate` and `change_application_source`)
-- **Custom fields** — list (with client-side objectType filter), get, create, setValue (polymorphic by field type)
+- **Candidates** (15) — create, search, list, list all (auto-paginated up to 5,000, with a `truncated` marker and cursor when there are more), get, update, notes (create/list), tags (add/list), add to project, client info, anonymize, resume + file upload
+- **Jobs** (6) — create, search, list, get, update, set status (Open/Closed/Archived/Draft)
+- **Applications** (10) — create, list, get, update, change stage, change source, transfer, add/remove hiring team members, list interview feedback submissions
+- **Interviews** (11) — list/get interview-type definitions, list interview plans, list/get interview stages, list stage groups, create a schedule, list/update/cancel schedules, list the events on a schedule
+- **Projects** (3) — get, list, search (useful for attaching candidates)
+- **Sources** (1) — list (discover sourceIds for `create_candidate` and `change_application_source`)
+- **Custom fields** (4) — list (with client-side objectType filter), get, create, setValue (polymorphic by field type)
+
+Tool inputs mirror Ashby's OpenAPI spec (`openapi.json`): fields Ashby requires are marked required, and parameters the endpoint doesn't accept aren't offered.
 
 ## Team setup (2 commands)
 
@@ -65,6 +67,27 @@ The point of plugging Ashby into an LLM isn't the CRUD — it's the kind of work
 
 The shared team API key must have the right scopes in Ashby for the tools you use. At minimum the team key needs: candidates read + write, jobs read, projects read, and hiring-process metadata read (for custom fields). Interview tools additionally need "read interviews" — if you see a `403 Forbidden` from an interview tool, have an Ashby admin grant that scope on the team key.
 
+## Configuration
+
+Everything is configured through environment variables. In Claude Code, pass them as `-e KEY=VALUE` flags on `claude mcp add`; on Render, set them on the service.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ASHBY_API_KEY` | — | **Required.** Ashby API key, sent as HTTP Basic auth. |
+| `ASHBY_OUTPUT` | `markdown` | Tool output format. `markdown` renders list results as compact tables and single records as labeled sections — fewer tokens, easier to scan in a transcript. Set `json` to get Ashby's raw JSON envelope instead, e.g. for programmatic consumers or when you need a field the tables leave out. |
+| `MCP_TRANSPORT` | `stdio` | `stdio` for local clients such as Claude Code; `http` for the HTTP/SSE server used by Cowork / Render. |
+| `MCP_HOST`, `MCP_PORT` | `127.0.0.1`, `8000` | Bind address for the HTTP transport. `PORT` is honored as a fallback for `MCP_PORT` (the Render / Heroku / Fly convention). |
+| `MCP_BEARER_TOKEN` | unset | HTTP transport only. When set, every request must carry `Authorization: Bearer <token>`; leave unset only for local testing. |
+
+For example, to register the server in Claude Code with raw JSON output:
+
+```bash
+claude mcp add ashby -s user \
+  -e ASHBY_API_KEY=PASTE_TEAM_KEY_HERE \
+  -e ASHBY_OUTPUT=json \
+  -- uvx --from git+https://github.com/nxrobins/ashby-mcp ashby-mcp
+```
+
 ## Using from Claude Cowork (browser)
 
 Cowork runs in the browser and can't spawn local processes, so the stdio server above doesn't work there. The same code also runs as an HTTP/SSE server; you host it, teammates add it as a custom connector in Cowork.
@@ -110,14 +133,14 @@ Quick tunnels buffer small SSE chunks, which breaks the MCP handshake (the initi
 ### Run the test suite
 
 ```bash
-uv sync --group dev
+uv sync --group dev           # installs `ashby` in editable mode plus the test deps
 uv run pytest                 # unit tests (mocked HTTP, no network)
 uv run pytest -m live         # live smoke tests (requires ASHBY_API_KEY)
 uv run ruff check             # lint
 uv run ruff format --check    # formatting (drop --check to apply)
 ```
 
-Unit tests cover every tool's routing and request shape. Live tests hit only read-only endpoints (`list_*`, `get_*`, `search_*`) so they can't corrupt workspace data; they exist to catch contract drift.
+`uv sync` installs the package itself (editable, from `src/ashby`), so `import ashby` works in the project venv and the tests exercise the same package layout users install. Unit tests cover every tool's routing and request shape, the markdown formatters, error surfacing, and a few guards that keep the tool registry, this README, and Ashby's spec in sync. Live tests hit only read-only endpoints (`list_*`, `get_*`, `search_*`) so they can't corrupt workspace data; they exist to catch contract drift.
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same lint, format and test steps on every push to `main` and every pull request, checks that `uv.lock` is in sync with `pyproject.toml`, and runs `pip-audit` against the locked dependency set.
 
@@ -136,26 +159,41 @@ Commit the updated `uv.lock` with the change; CI's `pip-audit` step will flag an
 
 ```
 src/ashby/
-  __init__.py       # entry point
-  server.py         # AshbyClient + MCP tool definitions + dispatcher
+  __init__.py            # main() — the `ashby-mcp` console script
+  server.py              # MCP Server wiring: registers tool list + dispatcher, picks a transport
+  tools.py               # tool schemas — the names, descriptions and inputSchemas clients see
+  handlers.py            # dispatcher: tool name → Ashby endpoint (_SIMPLE) or custom handler (_SPECIAL)
+  client.py              # AshbyClient — httpx, HTTP Basic auth, tenacity retries on 429/5xx
+  formatting.py          # markdown tables / records for LLM-friendly output (see ASHBY_OUTPUT)
+  transport.py           # stdio and HTTP+SSE transports, bearer auth, /healthz
 tests/
-  conftest.py       # shared fixtures
-  test_routing.py   # unit tests (one per tool)
-  test_live.py      # opt-in live smoke tests
-openapi.json        # Ashby's full OpenAPI spec (reference for adding new tools)
+  conftest.py            # shared fixtures: mocked HTTP, dummy API key, JSON output mode
+  test_routing.py        # one test per tool — endpoint hit and body sent
+  test_formatting.py     # formatter unit tests + end-to-end markdown rendering
+  test_error_handling.py # error bodies surfaced to the caller, missing key, logging
+  test_tools.py          # registry ↔ handler consistency, README tool count, spec-required fields
+  test_transport.py      # advertised server name/version
+  test_live.py           # opt-in live smoke tests
+evals/                   # LLM-in-the-loop evals against a fake Ashby (see evals/README.md)
+openapi.json             # Ashby's full OpenAPI spec (reference for adding new tools)
+render.yaml              # Render blueprint for the HTTP/SSE deployment
 ```
 
 ## Adding a new tool
 
-1. Find the endpoint in `openapi.json` (search by `/` prefix)
-2. Add a `types.Tool(name=..., inputSchema=...)` entry in `handle_list_tools` in `server.py`
-3. Add a matching `elif name == "..."` branch in `handle_call_tool`
-4. Add a routing test in `tests/test_routing.py`
-5. Restart Claude Code to reload the MCP subprocess
+1. Find the endpoint in `openapi.json` (search for its path, e.g. `"/candidate.list"`) and note which request fields are `required`.
+2. Add a `types.Tool(name=..., description=..., inputSchema=...)` entry to `all_tools()` in `src/ashby/tools.py`. Mirror the spec's `required` list and don't offer parameters the endpoint doesn't accept.
+3. Route it in `src/ashby/handlers.py`:
+   - a plain POST of the arguments → one line in `_SIMPLE`: `"tool_name": ("/endpoint", "Response prefix")`
+   - anything that reshapes the payload or response (client-side filters, auto-pagination, multipart uploads) → an async function plus an entry in `_SPECIAL`
+4. Optionally add a `_LIST_FORMATS` / `_RECORD_FORMATS` entry in `handlers.py` so markdown mode renders a compact table or record instead of raw JSON.
+5. Add a routing test in `tests/test_routing.py` asserting the endpoint hit and the body sent.
+6. Update the tool count and area list under "What's included" above — `tests/test_tools.py` fails until the count matches and the tool is routed.
+7. Restart Claude Code to reload the MCP subprocess.
 
 ## Troubleshooting
 
-- **`✗ Failed to connect` from `claude mcp list`** — usually means the shared folder path is wrong or `uv` isn't on your PATH. Run `uv --directory <SHARED_PATH> run ashby` manually; the error will tell you which.
+- **`✗ Failed to connect` from `claude mcp list`** — usually `uv` isn't on your PATH, or the `uvx` fetch failed. Run the registered command by hand: `uvx --from git+https://github.com/nxrobins/ashby-mcp ashby-mcp`. A healthy server sits silently waiting on stdin (Ctrl-C to exit); otherwise the error is printed. From a checkout, `uv run ashby-mcp` does the same.
 - **`401 Unauthorized` on every tool** — the API key isn't being passed. Double-check the `-e ASHBY_API_KEY=...` flag in your registration.
 - **`403 Forbidden` on specific tools** — permissions gap on the team key; ask an Ashby admin.
 - **New tools aren't showing up** — MCP loads tools once at session start. Restart Claude Code.

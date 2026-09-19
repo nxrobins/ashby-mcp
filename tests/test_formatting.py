@@ -163,6 +163,45 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
     assert '"success": true' not in text
 
 
+async def test_list_all_candidates_truncation_is_called_out(httpx_mock, markdown_mode, monkeypatch):
+    """Hitting the page cap with data remaining must be visible in the
+    rendered markdown, not just in the JSON envelope."""
+    import ashby.handlers as handlers
+
+    monkeypatch.setattr(handlers, "_LIST_ALL_MAX_PAGES", 1)
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={
+            "success": True,
+            "results": [{"id": "c1", "name": "Ada Lovelace"}],
+            "moreDataAvailable": True,
+            "nextCursor": "cursor-2",
+        },
+    )
+    text = await _call_raw("list_all_candidates", {})
+    assert "## All candidates (1, more available)" in text
+    assert "Next cursor: `cursor-2`" in text
+    assert "Truncated at 1 results" in text
+
+
+async def test_list_all_candidates_complete_walk_has_no_truncation_note(httpx_mock, markdown_mode):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.list",
+        json={
+            "success": True,
+            "results": [{"id": "c1", "name": "Ada Lovelace"}],
+            "moreDataAvailable": False,
+            "syncToken": "sync-abc",
+        },
+    )
+    text = await _call_raw("list_all_candidates", {})
+    assert "## All candidates (1)" in text
+    assert "Truncated" not in text
+    assert "Sync token: `sync-abc`" in text
+
+
 async def test_list_sources_table_uses_source_type(httpx_mock, markdown_mode):
     httpx_mock.add_response(
         method="POST",

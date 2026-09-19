@@ -1,16 +1,35 @@
 """Transport layer — stdio (for Claude Code) and HTTP+SSE (for Claude Cowork / Render)."""
 
 import os
+from importlib.metadata import PackageNotFoundError, version
 
 import mcp.server.stdio
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
+# Distribution name from pyproject.toml `[project] name`.
+_DIST_NAME = "mcp-ashby-connector"
+_DEV_VERSION = "0.0.0+dev"
+
+
+def server_version() -> str:
+    """The version advertised to MCP clients during `initialize`.
+
+    Read from the installed distribution's metadata so it tracks
+    `pyproject.toml` automatically. Falls back to a dev marker when the
+    package isn't installed (e.g. running straight from a checkout with
+    `src/` on PYTHONPATH).
+    """
+    try:
+        return version(_DIST_NAME)
+    except PackageNotFoundError:
+        return _DEV_VERSION
+
 
 def _init_options(server: Server) -> InitializationOptions:
     return InitializationOptions(
         server_name="ashby-mcp",
-        server_version="0.1.0",
+        server_version=server_version(),
         capabilities=server.get_capabilities(
             notification_options=NotificationOptions(),
             experimental_capabilities={},

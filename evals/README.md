@@ -28,7 +28,7 @@ uv run python -m evals.run --dump trace.json
 ASHBY_EVAL_VERBOSE=1 uv run python -m evals.run
 ```
 
-Exit code is `0` iff every case passed, so this slots into CI.
+Exit code is `0` iff every case passed, so the command can gate a CI job. It is deliberately not part of the CI workflow ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)): every run calls the Anthropic API, so it needs an `ANTHROPIC_API_KEY` and costs real money (see [Cost](#cost)). Run it by hand before merging changes to tool descriptions or the formatters. To wire it into CI later, add the key as a repository secret and a workflow step that runs the command above.
 
 ## How it works
 

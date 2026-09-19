@@ -17,6 +17,7 @@ from ashby.formatting import (
     get_value,
     table,
 )
+from ashby.handlers import ToolError, dispatch
 
 BASE = "https://api.ashbyhq.com"
 
@@ -111,7 +112,6 @@ def markdown_mode(monkeypatch):
 
 async def _call_raw(name: str, arguments: dict | None = None) -> str:
     """Invoke dispatch and return the raw text (not JSON-parsed)."""
-    from ashby.handlers import dispatch  # import fresh after env is set
     result = await dispatch(name, arguments or {})
     assert len(result) == 1
     return result[0].text
@@ -127,9 +127,9 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
                 {
                     "id": "c1",
                     "name": "Ada Lovelace",
-                    "position": "Analyst",
-                    "company": "Babbage & Co",
-                    "school": "Independent",
+                    "position": "Engineer",
+                    "company": "Analytical Engines Ltd",
+                    "school": "Cambridge",
                     "linkedInUrl": "https://linkedin.com/in/ada",
                     "primaryEmailAddress": {"value": "ada@example.com"},
                     "source": {"title": "LinkedIn"},
@@ -150,10 +150,10 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
     assert "## Candidates (2)" in text
     assert "| id | name | position | company | school | linkedin | email | source | created |" in text
     assert (
-        "| c1 | Ada Lovelace | Analyst | Babbage & Co | Independent | https://linkedin.com/in/ada "
-        "| ada@example.com | LinkedIn |"
+        "| c1 | Ada Lovelace | Engineer | Analytical Engines Ltd | Cambridge "
+        "| https://linkedin.com/in/ada | ada@example.com | LinkedIn |"
     ) in text
-    # Profile fields absent on the record render as dashes, not blanks.
+    # Fields the record lacks render as the `—` placeholder, not as blanks.
     assert "| c2 | Alan Turing | — | — | — | — | alan@example.com | Referral |" in text
     # Make sure the verbose raw JSON envelope is NOT in the output.
     assert '"success": true' not in text
@@ -252,3 +252,50 @@ async def test_unformatted_tool_falls_back_to_json(httpx_mock, markdown_mode):
     assert text.startswith("Created candidate: ")
     # JSON fallback
     assert '"id": "c_new"' in text
+
+
+# ---------------------------------------------------------------------------
+# Error envelopes — Ashby reports validation/permission failures as HTTP 200
+# with `success: false`. The formatters must never swallow those.
+# ---------------------------------------------------------------------------
+
+
+async def test_list_error_envelope_is_not_rendered_as_empty_table(httpx_mock, markdown_mode):
+    """Before: `format_list` rendered this as "## Applications (0)" over a
+    "(no results)" placeholder and the error text was lost entirely."""
+    envelope = {
+        "success": False,
+        "errors": ["invalid_input"],
+        "errorInfo": {"code": "INVALID_ARGUMENT", "message": "jobId must be a UUID"},
+    }
+    httpx_mock.add_response(method="POST", url=f"{BASE}/application.list", json=envelope)
+    with pytest.raises(ToolError) as exc_info:
+        await dispatch("list_applications", {"jobId": "not-a-uuid"})
+    text = str(exc_info.value)
+    assert text.startswith("Ashby returned an error for list_applications: ")
+    assert "invalid_input" in text
+    assert "jobId must be a UUID" in text
+    assert "(no results)" not in text
+    assert "## Applications" not in text
+    # The envelope is passed through verbatim, as JSON, despite markdown mode.
+    assert json.loads(text.partition(": ")[2]) == envelope
+
+
+async def test_record_error_envelope_is_not_rendered_as_blank_record(httpx_mock, markdown_mode):
+    """Before: `format_record` rendered this as a "## Record" block whose
+    every field was `—`, indistinguishable from a real but empty record."""
+    envelope = {
+        "success": False,
+        "errors": ["not_found"],
+        "errorInfo": {"code": "NOT_FOUND", "message": "Candidate not found"},
+    }
+    httpx_mock.add_response(method="POST", url=f"{BASE}/candidate.info", json=envelope)
+    with pytest.raises(ToolError) as exc_info:
+        await dispatch("get_candidate", {"id": "c_missing"})
+    text = str(exc_info.value)
+    assert text.startswith("Ashby returned an error for get_candidate: ")
+    assert "not_found" in text
+    assert "Candidate not found" in text
+    assert "## Record" not in text
+    assert "- **email**: —" not in text
+    assert json.loads(text.partition(": ")[2]) == envelope

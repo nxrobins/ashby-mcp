@@ -21,7 +21,7 @@ from typing import Any
 import anthropic
 
 from ashby.client import ashby_client
-from ashby.handlers import dispatch
+from ashby.handlers import ToolError, dispatch
 from ashby.tools import all_tools
 
 from .fake_server import install as install_fake
@@ -46,6 +46,7 @@ class ToolCall:
     name: str
     input: dict[str, Any]
     output: str  # text content returned to the model
+    is_error: bool = False  # the dispatcher failed; sent to the model as `is_error: true`
 
 
 @dataclass
@@ -127,14 +128,23 @@ async def run_case(case: dict, model: str = DEFAULT_MODEL) -> CaseResult:
             for block in response.content:
                 if getattr(block, "type", None) != "tool_use":
                     continue
-                tool_output = await dispatch(block.name, dict(block.input))
-                text = tool_output[0].text if tool_output else ""
+                try:
+                    tool_output = await dispatch(block.name, dict(block.input))
+                    text, is_error = (tool_output[0].text if tool_output else ""), False
+                except ToolError as e:
+                    # A real MCP client receives `isError: true` for this;
+                    # mirror it so the eval model sees failures the way it
+                    # would in production, not as a successful result.
+                    text, is_error = str(e), True
                 result.tool_calls.append(
-                    ToolCall(name=block.name, input=dict(block.input), output=text)
+                    ToolCall(name=block.name, input=dict(block.input), output=text, is_error=is_error)
                 )
-                tool_results.append(
-                    {"type": "tool_result", "tool_use_id": block.id, "content": text}
-                )
+                tool_result: dict[str, Any] = {
+                    "type": "tool_result", "tool_use_id": block.id, "content": text,
+                }
+                if is_error:
+                    tool_result["is_error"] = True
+                tool_results.append(tool_result)
             messages.append({"role": "user", "content": tool_results})
 
         result.stop_reason = "max_turns_exceeded"

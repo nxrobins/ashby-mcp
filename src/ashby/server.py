@@ -1,13 +1,9 @@
-# /// script
-# dependencies = [
-#   "mcp",
-#   "httpx",
-#   "tenacity",
-#   "python-dotenv"
-# ]
-# ///
 """MCP server wiring — creates the Server instance, registers the tool
 list and the tool dispatcher, and dispatches run() to the right transport.
+
+Entry point is `ashby.main` (the `ashby-mcp` console script), which calls
+`run()` below. This module uses relative imports and is not runnable as a
+standalone script.
 
 The heavy lifting lives in sibling modules:
   - tools.py      — tool schemas (what LLMs see)
@@ -16,7 +12,6 @@ The heavy lifting lives in sibling modules:
   - transport.py  — stdio / HTTP+SSE transports
 """
 
-import asyncio
 import os
 
 from dotenv import load_dotenv
@@ -59,7 +54,3 @@ async def run() -> None:
         await run_http(server, host, port)
     else:
         await run_stdio(server)
-
-
-if __name__ == "__main__":
-    asyncio.run(run())

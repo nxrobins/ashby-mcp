@@ -185,9 +185,8 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
             ("id", "id"),
             ("candidate_id", "candidate.id"),
             ("candidate", "candidate.name"),
-            # Candidate-derived firmware-scoring signals — surfacing these on the
-            # list view lets a heuristic skim N applications with no per-row
-            # `get_candidate` calls.
+            # Candidate profile signals — surfacing these on the list view lets a
+            # caller skim N applications with no per-row `get_candidate` calls.
             ("position", "candidate.position"),
             ("company", "candidate.company"),
             ("school", "candidate.school"),
@@ -311,7 +310,7 @@ _RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
     "get_candidate": (
         "name",
         [
-            # Firmware-scoring signals first so a heuristic finds them at a glance.
+            # Candidate profile signals first so they're visible at a glance.
             ("position", "position"),
             ("company", "company"),
             ("school", "school"),
@@ -354,7 +353,7 @@ _RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
     "get_application": (
         "candidate.name",
         [
-            # Candidate-derived firmware-scoring signals — same as get_candidate.
+            # Candidate profile signals — same as get_candidate.
             ("position", "candidate.position"),
             ("company", "candidate.company"),
             ("school", "candidate.school"),
@@ -475,25 +474,52 @@ async def _upload_candidate_file(arguments: dict) -> list[types.TextContent]:
     return _text("upload_candidate_file", "File uploaded", response)
 
 
+# Upper bound on pages fetched by one list_all_candidates call. At Ashby's
+# page size of 100 this is 5,000 candidates — enough for most workspaces
+# while keeping a single tool call bounded in time and response size.
+_LIST_ALL_MAX_PAGES = 50
+_LIST_ALL_PAGE_SIZE = 100
+
+
 async def _list_all_candidates(arguments: dict) -> list[types.TextContent]:
-    """Auto-paginate /candidate.list until exhausted (cap 50 pages = 5k candidates)."""
+    """Auto-paginate /candidate.list until exhausted or the page cap is hit.
+
+    When the cap stops the walk with data still remaining, the response is
+    marked `truncated: true` and carries `moreDataAvailable` / `nextCursor`
+    so the caller can continue with `list_candidates` from where this
+    stopped. A completed walk passes through Ashby's final `syncToken`.
+    """
     all_results: list = []
-    payload: dict = {"limit": 100}
+    payload: dict = {"limit": _LIST_ALL_PAGE_SIZE}
     if arguments and "syncToken" in arguments:
         payload["syncToken"] = arguments["syncToken"]
-    for _ in range(50):
+
+    truncated = False
+    next_cursor = None
+    sync_token = None
+    for _ in range(_LIST_ALL_MAX_PAGES):
         page = await ashby_client._make_request("/candidate.list", method="POST", data=payload)
         # An error page carries no `results`/`moreDataAvailable`, so without
         # this it would read as an empty last page and end the loop with a
         # silently truncated (or empty) list.
         _raise_if_ashby_error("list_all_candidates", page)
         all_results.extend(page.get("results", []))
+        sync_token = page.get("syncToken")
         if not page.get("moreDataAvailable") or not page.get("nextCursor"):
             break
         payload["cursor"] = page["nextCursor"]
-    return _text(
-        "list_all_candidates", "All candidates", {"results": all_results, "total": len(all_results)}
-    )
+    else:
+        # Loop ran out of pages without hitting the end of the data.
+        truncated = True
+        next_cursor = payload.get("cursor")
+
+    response: dict = {"results": all_results, "total": len(all_results), "truncated": truncated}
+    if truncated:
+        response["moreDataAvailable"] = True
+        response["nextCursor"] = next_cursor
+    elif sync_token:
+        response["syncToken"] = sync_token
+    return _text("list_all_candidates", "All candidates", response)
 
 
 async def _list_sources(arguments: dict) -> list[types.TextContent]:

@@ -4,6 +4,7 @@ import hmac
 import ipaddress
 import logging
 import os
+from importlib.metadata import PackageNotFoundError, version
 
 import mcp.server.stdio
 from mcp.server import NotificationOptions, Server
@@ -14,12 +15,29 @@ from . import policy
 logger = logging.getLogger("ashby.transport")
 
 _LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1"})
+# Distribution name from pyproject.toml `[project] name`.
+_DIST_NAME = "mcp-ashby-connector"
+_DEV_VERSION = "0.0.0+dev"
+
+
+def server_version() -> str:
+    """The version advertised to MCP clients during `initialize`.
+
+    Read from the installed distribution's metadata so it tracks
+    `pyproject.toml` automatically. Falls back to a dev marker when the
+    package isn't installed (e.g. running straight from a checkout with
+    `src/` on PYTHONPATH).
+    """
+    try:
+        return version(_DIST_NAME)
+    except PackageNotFoundError:
+        return _DEV_VERSION
 
 
 def _init_options(server: Server) -> InitializationOptions:
     return InitializationOptions(
         server_name="ashby-mcp",
-        server_version="0.1.0",
+        server_version=server_version(),
         capabilities=server.get_capabilities(
             notification_options=NotificationOptions(),
             experimental_capabilities={},
@@ -103,6 +121,7 @@ def build_http_app(server: Server, bearer_token: str | None):
     whether auth is on. Split out of run_http() so tests can drive the app
     with starlette's TestClient without binding a port.
     """
+    import uvicorn
     from mcp.server.sse import SseServerTransport
     from starlette.applications import Starlette
     from starlette.datastructures import Headers

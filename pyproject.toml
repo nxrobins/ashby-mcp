@@ -12,19 +12,24 @@ keywords = ["mcp", "llm", "ashby", "ats"]
 dependencies = [
     # The upper bound is load-bearing, not caution. mcp 2.0.0 removed the
     # Server.list_tools() / Server.call_tool() decorators that server.py applies
-    # at MODULE level (src/ashby/server.py:34), so an unpinned resolve raises
-    # AttributeError at import — before the server can speak MCP. Clients see
-    # only the stdio pipe close ("-32000: Connection closed"), with no hint that
-    # a dependency moved, which is why this must be pinned here rather than at
-    # each install site. Deliberately an upper bound only, with no floor: core's
-    # apps/chippy/Dockerfile installs this package with `--with mcp==1.28.1`,
-    # and a floor above that would make those image builds unresolvable.
-    # Verified working on both 1.28.1 and 1.29.0. Raising the bound requires
-    # porting server.py to the 2.x API first.
+    # at MODULE level, so an unpinned resolve raises AttributeError at import —
+    # before the server can speak MCP. Clients see only the stdio pipe close
+    # ("-32000: Connection closed"), with no hint that a dependency moved, which
+    # is why this must be pinned here rather than at each install site.
+    # Deliberately an upper bound only, with no floor: downstream deployments
+    # install this package alongside their own pinned 1.x mcp (for example via
+    # `uv ... --with mcp==1.28.1`), and a floor above that would make those
+    # installs unresolvable. Verified working on both 1.28.1 and 1.29.0.
+    # Raising the bound requires porting server.py to the 2.x API first.
     "mcp<2",
     "httpx>=0.27",
     "tenacity>=8.0",
     "python-dotenv",
+    # Imported directly by transport.py for the HTTP/SSE transport. They also
+    # arrive transitively through mcp, but a direct import deserves a direct
+    # declaration so a future mcp release can't silently drop them.
+    "starlette>=0.27",
+    "uvicorn>=0.23",
 ]
 license = { text = "MIT" }
 authors = [
@@ -35,16 +40,20 @@ authors = [
 Homepage = "https://github.com/nxrobins/ashby-mcp"
 
 [project.scripts]
-ashby-mcp = "src.ashby:main"
+ashby-mcp = "ashby:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+# src-layout: hatch maps `src/ashby` to a top-level `ashby` package in the
+# wheel, so `import ashby` works once the project is installed (including
+# the editable install `uv sync` performs).
+packages = ["src/ashby"]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-httpx>=0.30",
+    "ruff>=0.15",
 ]
 evals = [
     "anthropic>=0.39",
@@ -57,4 +66,15 @@ markers = [
     "live: tests that hit the real Ashby API (require ASHBY_API_KEY; skipped otherwise)",
 ]
 testpaths = ["tests"]
-pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tool descriptions are prose the model reads. One string per tool is easier
+# to review and edit than the implicit concatenations wrapping would need.
+"src/ashby/tools.py" = ["E501"]

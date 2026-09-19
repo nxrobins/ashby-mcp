@@ -7,10 +7,13 @@ asserted on `/messages/`, where the SSE transport answers 400 (no
 session_id) as soon as auth has passed.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 import pytest
 from mcp.server import Server
 from starlette.testclient import TestClient
 
+from ashby import transport
 from ashby.transport import (
     bearer_authorized,
     build_http_app,
@@ -206,3 +209,27 @@ async def test_run_http_refuses_public_bind_without_token(no_auth_env):
     with pytest.raises(SystemExit) as exc:
         await run_http(Server("ashby-test"), "0.0.0.0", 8000)
     assert "MCP_BEARER_TOKEN" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# Server metadata advertised during `initialize` (from PR #11)
+# ---------------------------------------------------------------------------
+
+
+def test_server_version_matches_installed_distribution():
+    assert transport.server_version() == version("mcp-ashby-connector")
+    assert transport.server_version() != transport._DEV_VERSION
+
+
+def test_server_version_falls_back_when_not_installed(monkeypatch):
+    def _missing(name: str) -> str:
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(transport, "version", _missing)
+    assert transport.server_version() == "0.0.0+dev"
+
+
+def test_init_options_advertise_name_and_version():
+    opts = transport._init_options(Server("test"))
+    assert opts.server_name == "ashby-mcp"
+    assert opts.server_version == transport.server_version()

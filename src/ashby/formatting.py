@@ -12,9 +12,9 @@ programmatic consumers).
 import json
 import os
 from collections.abc import Callable, Sequence
-from typing import Any, Union
+from typing import Any
 
-Accessor = Union[str, Callable[[Any], Any]]
+Accessor = str | Callable[[Any], Any]
 Column = tuple[str, Accessor]  # (header, accessor)
 
 
@@ -110,6 +110,14 @@ def format_list(response: Any, title: str, columns: Sequence[Column]) -> str:
         meta.append(f"Sync token: `{sync}`")
     if meta:
         lines += ["", " · ".join(meta)]
+    if response.get("truncated"):
+        # Set by auto-paginating tools that hit their page cap before the
+        # data ran out — make the incompleteness impossible to miss.
+        lines += [
+            "",
+            f"_Truncated at {len(results)} results — more exist. "
+            "Continue from the cursor above with a paginated list call._",
+        ]
     return "\n".join(lines)
 
 

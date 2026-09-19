@@ -74,7 +74,7 @@ Everything is configured through environment variables. In Claude Code, pass the
 | Variable | Default | Purpose |
 |---|---|---|
 | `ASHBY_API_KEY` | — | **Required.** Ashby API key, sent as HTTP Basic auth. |
-| `ASHBY_OUTPUT` | `markdown` | Tool output format. `markdown` renders list results as compact tables and single records as labeled sections — fewer tokens, easier to scan in a transcript. Set `json` to get Ashby's raw JSON envelope instead, e.g. for programmatic consumers or when you need a field the tables leave out. |
+| `ASHBY_OUTPUT` | `markdown` | Tool output format. `markdown` renders list results as compact tables and single records as labeled sections — fewer tokens, easier to scan in a transcript. Set `json` to get Ashby's raw JSON envelope instead, e.g. for programmatic consumers or when you need a field the tables leave out. Record views (`get_*`) list every top-level field of the object, so expanded sub-objects are never dropped. |
 | `MCP_TRANSPORT` | `stdio` | `stdio` for local clients such as Claude Code; `http` for the HTTP/SSE server used by Cowork / Render. |
 | `MCP_HOST`, `MCP_PORT` | `127.0.0.1`, `8000` | Bind address for the HTTP transport. `PORT` is honored as a fallback for `MCP_PORT` (the Render / Heroku / Fly convention). |
 | `MCP_BEARER_TOKEN` | unset | HTTP transport only. Every request must carry `Authorization: Bearer <token>`. Required on any non-loopback bind: the server refuses to start without it. See the [Security note](#security-note) for `MCP_ALLOW_INSECURE`, `ASHBY_READ_ONLY` and `ASHBY_UPLOAD_DIR`. |

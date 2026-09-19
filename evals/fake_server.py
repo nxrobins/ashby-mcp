@@ -26,6 +26,7 @@ from .workspace import (
     CANDIDATES,
     INTERVIEW_STAGES,
     JOBS,
+    LOCATIONS,
     SOURCES,
 )
 
@@ -85,17 +86,24 @@ def candidate_list_notes(body: dict) -> dict:
     return _ok(notes, moreDataAvailable=False)
 
 
+def _job_view(job: dict, body: dict) -> dict:
+    """Ashby returns `locationId`; the `location` object only with expand=["location"]."""
+    if "location" in (body.get("expand") or []):
+        return {**job, "location": LOCATIONS[job["locationId"]]}
+    return job
+
+
 def job_list(body: dict) -> dict:
     statuses = body.get("status") or ["Open"]
     items = [j for j in JOBS if j["status"] in statuses]
     page, more, cursor = _paginate(items, body)
-    return _ok(page, moreDataAvailable=more, nextCursor=cursor)
+    return _ok([_job_view(j, body) for j in page], moreDataAvailable=more, nextCursor=cursor)
 
 
 def job_info(body: dict) -> dict:
     jid = body.get("id")
     job = next((j for j in JOBS if j["id"] == jid), None)
-    return _ok(job) if job else _not_found()
+    return _ok(_job_view(job, body)) if job else _not_found()
 
 
 def job_search(body: dict) -> dict:

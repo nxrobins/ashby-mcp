@@ -9,7 +9,6 @@ These tests pin the debuggability contract we want from the server:
   activity; failures are logged at ERROR with enough context to debug.
 """
 
-import json
 import logging
 
 import pytest

@@ -108,7 +108,9 @@ async def run_case(case: dict, model: str = DEFAULT_MODEL) -> CaseResult:
             u = getattr(response, "usage", None)
             if u is not None:
                 result.usage["input_tokens"] = result.usage.get("input_tokens", 0) + u.input_tokens
-                result.usage["output_tokens"] = result.usage.get("output_tokens", 0) + u.output_tokens
+                result.usage["output_tokens"] = (
+                    result.usage.get("output_tokens", 0) + u.output_tokens
+                )
 
             if response.stop_reason == "end_turn":
                 result.final_text = _first_text(response.content)

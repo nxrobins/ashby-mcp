@@ -10,8 +10,6 @@ request. Each test asserts:
 
 import json
 
-import pytest
-
 BASE = "https://api.ashbyhq.com"
 
 
@@ -415,7 +413,9 @@ async def test_cancel_interview_schedule(httpx_mock, call_tool):
 
 async def test_list_interview_events(httpx_mock, call_tool):
     _ok(httpx_mock, "/interviewEvent.list")
-    await call_tool("list_interview_events", {"interviewScheduleId": "sch-1", "expand": ["interview"]})
+    await call_tool(
+        "list_interview_events", {"interviewScheduleId": "sch-1", "expand": ["interview"]}
+    )
     assert _sent_body(httpx_mock) == {"interviewScheduleId": "sch-1", "expand": ["interview"]}
 
 
@@ -449,9 +449,21 @@ async def test_list_interview_stage_groups(httpx_mock, call_tool):
 
 
 async def test_list_sources_default(httpx_mock, call_tool):
-    _ok(httpx_mock, "/source.list", json_body={"success": True, "results": [
-        {"id": "s1", "title": "LinkedIn", "isArchived": False, "sourceType": {"id": "st1", "title": "Job Board", "isArchived": False}},
-    ]})
+    _ok(
+        httpx_mock,
+        "/source.list",
+        json_body={
+            "success": True,
+            "results": [
+                {
+                    "id": "s1",
+                    "title": "LinkedIn",
+                    "isArchived": False,
+                    "sourceType": {"id": "st1", "title": "Job Board", "isArchived": False},
+                },
+            ],
+        },
+    )
     await call_tool("list_sources", {})
     assert _sent_body(httpx_mock) == {"includeArchived": False}
 
@@ -479,7 +491,12 @@ async def test_list_all_candidates_auto_paginates(httpx_mock, call_tool):
     httpx_mock.add_response(
         method="POST",
         url=f"{BASE}/candidate.list",
-        json={"success": True, "results": [{"id": "c1"}], "moreDataAvailable": True, "nextCursor": "cursor-2"},
+        json={
+            "success": True,
+            "results": [{"id": "c1"}],
+            "moreDataAvailable": True,
+            "nextCursor": "cursor-2",
+        },
     )
     httpx_mock.add_response(
         method="POST",

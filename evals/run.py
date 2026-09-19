@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import glob
 import json
 import logging
 import os
@@ -54,10 +53,12 @@ def _fmt_check(c) -> str:
 
 def _print_case(case: dict, result, g) -> None:
     print(f"\n── {case['name']} ({case['_path']}) ──")
-    print(f"  turns={result.turns}  tools={len(result.tool_calls)}  "
-          f"stop={result.stop_reason}  "
-          f"in_tok={result.usage.get('input_tokens', 0)}  "
-          f"out_tok={result.usage.get('output_tokens', 0)}")
+    print(
+        f"  turns={result.turns}  tools={len(result.tool_calls)}  "
+        f"stop={result.stop_reason}  "
+        f"in_tok={result.usage.get('input_tokens', 0)}  "
+        f"out_tok={result.usage.get('output_tokens', 0)}"
+    )
     if result.error:
         print(f"  ERROR: {result.error}")
         return
@@ -73,9 +74,11 @@ def _print_case(case: dict, result, g) -> None:
 
 def _print_summary(passed: int, total: int, total_tokens: dict[str, int]) -> None:
     print("\n" + "=" * 60)
-    print(f"Result: {passed}/{total} cases passed "
-          f"({total_tokens.get('input_tokens', 0)} in / "
-          f"{total_tokens.get('output_tokens', 0)} out tokens)")
+    print(
+        f"Result: {passed}/{total} cases passed "
+        f"({total_tokens.get('input_tokens', 0)} in / "
+        f"{total_tokens.get('output_tokens', 0)} out tokens)"
+    )
 
 
 async def _main_async(pattern: str | None, model: str, dump: str | None) -> int:
@@ -101,17 +104,21 @@ async def _main_async(pattern: str | None, model: str, dump: str | None) -> int:
             passed += 1
         totals["input_tokens"] += result.usage.get("input_tokens", 0)
         totals["output_tokens"] += result.usage.get("output_tokens", 0)
-        trace.append({
-            "case": case["name"],
-            "pass": g.overall_pass,
-            "turns": result.turns,
-            "tool_calls": [{"name": tc.name, "input": tc.input} for tc in result.tool_calls],
-            "final_text": result.final_text,
-            "checks": [{"name": c.name, "pass": c.passed, "detail": c.detail} for c in g.checks],
-            "judge_score": g.judge_score,
-            "judge_reasoning": g.judge_reasoning,
-            "usage": result.usage,
-        })
+        trace.append(
+            {
+                "case": case["name"],
+                "pass": g.overall_pass,
+                "turns": result.turns,
+                "tool_calls": [{"name": tc.name, "input": tc.input} for tc in result.tool_calls],
+                "final_text": result.final_text,
+                "checks": [
+                    {"name": c.name, "pass": c.passed, "detail": c.detail} for c in g.checks
+                ],
+                "judge_score": g.judge_score,
+                "judge_reasoning": g.judge_reasoning,
+                "usage": result.usage,
+            }
+        )
 
     _print_summary(passed, len(cases), totals)
 
@@ -125,8 +132,12 @@ async def _main_async(pattern: str | None, model: str, dump: str | None) -> int:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("pattern", nargs="?", default=None,
-                   help="glob pattern within evals/cases/ (default: *.yaml)")
+    p.add_argument(
+        "pattern",
+        nargs="?",
+        default=None,
+        help="glob pattern within evals/cases/ (default: *.yaml)",
+    )
     p.add_argument("--model", default=DEFAULT_MODEL, help="model id (default: %(default)s)")
     p.add_argument("--dump", default=None, help="write a JSON trace to this path")
     args = p.parse_args()

@@ -7,8 +7,6 @@ Two layers:
    with realistic Ashby response shapes.
 """
 
-import json
-
 import pytest
 
 from ashby.formatting import (
@@ -112,6 +110,7 @@ def markdown_mode(monkeypatch):
 async def _call_raw(name: str, arguments: dict | None = None) -> str:
     """Invoke dispatch and return the raw text (not JSON-parsed)."""
     from ashby.handlers import dispatch  # import fresh after env is set
+
     result = await dispatch(name, arguments or {})
     assert len(result) == 1
     return result[0].text
@@ -151,8 +150,7 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
     text = await _call_raw("list_candidates", {"limit": 2})
     assert "## Candidates (2)" in text
     assert (
-        "| id | name | position | company | school | linkedin | email | source | created |"
-        in text
+        "| id | name | position | company | school | linkedin | email | source | created |" in text
     )
     assert (
         "| c1 | Ada Lovelace | Analytical Engine Lead | Babbage & Co | University of London"
@@ -170,8 +168,12 @@ async def test_list_sources_table_uses_source_type(httpx_mock, markdown_mode):
         json={
             "success": True,
             "results": [
-                {"id": "s1", "title": "LinkedIn", "isArchived": False,
-                 "sourceType": {"title": "Job Board"}},
+                {
+                    "id": "s1",
+                    "title": "LinkedIn",
+                    "isArchived": False,
+                    "sourceType": {"title": "Job Board"},
+                },
             ],
         },
     )

@@ -12,11 +12,8 @@ These tests pin the debuggability contract we want from the server:
   or agent loop would take for a successful result.
 """
 
-import json
 import logging
 from contextlib import asynccontextmanager
-
-import pytest
 
 BASE = "https://api.ashbyhq.com"
 

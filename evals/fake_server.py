@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -142,19 +143,19 @@ def archive_reason_list(body: dict) -> dict:
 
 
 ROUTES: dict[str, Callable[[dict], dict]] = {
-    "/candidate.list":       candidate_list,
-    "/candidate.info":       candidate_info,
-    "/candidate.search":     candidate_search,
-    "/candidate.listNotes":  candidate_list_notes,
-    "/job.list":             job_list,
-    "/job.info":             job_info,
-    "/job.search":           job_search,
-    "/application.list":     application_list,
-    "/application.info":     application_info,
-    "/source.list":          source_list,
-    "/interviewStage.list":  interview_stage_list,
-    "/interviewPlan.list":   interview_plan_list,
-    "/archiveReason.list":   archive_reason_list,
+    "/candidate.list": candidate_list,
+    "/candidate.info": candidate_info,
+    "/candidate.search": candidate_search,
+    "/candidate.listNotes": candidate_list_notes,
+    "/job.list": job_list,
+    "/job.info": job_info,
+    "/job.search": job_search,
+    "/application.list": application_list,
+    "/application.info": application_info,
+    "/source.list": source_list,
+    "/interviewStage.list": interview_stage_list,
+    "/interviewPlan.list": interview_plan_list,
+    "/archiveReason.list": archive_reason_list,
 }
 
 

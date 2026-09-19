@@ -41,7 +41,10 @@ def test_required_fields_mirror_ashby_spec():
     tools = _tools_by_name()
     assert tools["create_job"].inputSchema["required"] == ["title", "teamId", "locationId"]
     assert tools["transfer_application"].inputSchema["required"] == [
-        "applicationId", "jobId", "interviewPlanId", "interviewStageId",
+        "applicationId",
+        "jobId",
+        "interviewPlanId",
+        "interviewStageId",
     ]
 
 

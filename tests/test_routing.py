@@ -338,7 +338,12 @@ async def test_change_application_source(httpx_mock, call_tool):
 async def test_transfer_application(httpx_mock, call_tool):
     _ok(httpx_mock, "/application.transfer")
     # Ashby requires all four ids — see /application.transfer in openapi.json.
-    args = {"applicationId": "a1", "jobId": "j2", "interviewPlanId": "plan-2", "interviewStageId": "st-2"}
+    args = {
+        "applicationId": "a1",
+        "jobId": "j2",
+        "interviewPlanId": "plan-2",
+        "interviewStageId": "st-2",
+    }
     await call_tool("transfer_application", args)
     assert _sent_body(httpx_mock) == args
 
@@ -419,7 +424,9 @@ async def test_cancel_interview_schedule(httpx_mock, call_tool):
 
 async def test_list_interview_events(httpx_mock, call_tool):
     _ok(httpx_mock, "/interviewEvent.list")
-    await call_tool("list_interview_events", {"interviewScheduleId": "sch-1", "expand": ["interview"]})
+    await call_tool(
+        "list_interview_events", {"interviewScheduleId": "sch-1", "expand": ["interview"]}
+    )
     assert _sent_body(httpx_mock) == {"interviewScheduleId": "sch-1", "expand": ["interview"]}
 
 
@@ -453,9 +460,21 @@ async def test_list_interview_stage_groups(httpx_mock, call_tool):
 
 
 async def test_list_sources_default(httpx_mock, call_tool):
-    _ok(httpx_mock, "/source.list", json_body={"success": True, "results": [
-        {"id": "s1", "title": "LinkedIn", "isArchived": False, "sourceType": {"id": "st1", "title": "Job Board", "isArchived": False}},
-    ]})
+    _ok(
+        httpx_mock,
+        "/source.list",
+        json_body={
+            "success": True,
+            "results": [
+                {
+                    "id": "s1",
+                    "title": "LinkedIn",
+                    "isArchived": False,
+                    "sourceType": {"id": "st1", "title": "Job Board", "isArchived": False},
+                },
+            ],
+        },
+    )
     await call_tool("list_sources", {})
     assert _sent_body(httpx_mock) == {"includeArchived": False}
 
@@ -471,8 +490,12 @@ async def test_list_all_candidates_single_page(httpx_mock, call_tool):
     httpx_mock.add_response(
         method="POST",
         url=f"{BASE}/candidate.list",
-        json={"success": True, "results": [{"id": "c1"}, {"id": "c2"}], "moreDataAvailable": False,
-              "syncToken": "sync-1"},
+        json={
+            "success": True,
+            "results": [{"id": "c1"}, {"id": "c2"}],
+            "moreDataAvailable": False,
+            "syncToken": "sync-1",
+        },
     )
     result = await call_tool("list_all_candidates", {})
     assert result["total"] == 2
@@ -493,8 +516,13 @@ async def test_list_all_candidates_marks_truncation_at_page_cap(httpx_mock, call
         httpx_mock.add_response(
             method="POST",
             url=f"{BASE}/candidate.list",
-            json={"success": True, "results": [{"id": f"c{i}"}], "moreDataAvailable": True,
-                  "nextCursor": f"cursor-{i + 1}", "syncToken": "partial"},
+            json={
+                "success": True,
+                "results": [{"id": f"c{i}"}],
+                "moreDataAvailable": True,
+                "nextCursor": f"cursor-{i + 1}",
+                "syncToken": "partial",
+            },
         )
     result = await call_tool("list_all_candidates", {})
     assert len(httpx_mock.get_requests()) == 2  # stopped at the cap
@@ -511,7 +539,12 @@ async def test_list_all_candidates_auto_paginates(httpx_mock, call_tool):
     httpx_mock.add_response(
         method="POST",
         url=f"{BASE}/candidate.list",
-        json={"success": True, "results": [{"id": "c1"}], "moreDataAvailable": True, "nextCursor": "cursor-2"},
+        json={
+            "success": True,
+            "results": [{"id": "c1"}],
+            "moreDataAvailable": True,
+            "nextCursor": "cursor-2",
+        },
     )
     httpx_mock.add_response(
         method="POST",
@@ -533,7 +566,12 @@ async def test_list_all_candidates_aborts_on_error_page(httpx_mock):
     httpx_mock.add_response(
         method="POST",
         url=f"{BASE}/candidate.list",
-        json={"success": True, "results": [{"id": "c1"}], "moreDataAvailable": True, "nextCursor": "cursor-2"},
+        json={
+            "success": True,
+            "results": [{"id": "c1"}],
+            "moreDataAvailable": True,
+            "nextCursor": "cursor-2",
+        },
     )
     httpx_mock.add_response(
         method="POST",

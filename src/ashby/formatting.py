@@ -11,7 +11,8 @@ programmatic consumers).
 
 import json
 import os
-from typing import Any, Callable, Sequence, Union
+from collections.abc import Callable, Sequence
+from typing import Any, Union
 
 Accessor = Union[str, Callable[[Any], Any]]
 Column = tuple[str, Accessor]  # (header, accessor)
@@ -82,8 +83,7 @@ def table(rows: Sequence[Any], columns: Sequence[Column]) -> str:
     header = "| " + " | ".join(c[0] for c in columns) + " |"
     sep = "|" + "|".join(" --- " for _ in columns) + "|"
     body_lines = [
-        "| " + " | ".join(_cell(get_value(r, acc)) for _, acc in columns) + " |"
-        for r in rows
+        "| " + " | ".join(_cell(get_value(r, acc)) for _, acc in columns) + " |" for r in rows
     ]
     return "\n".join([header, sep, *body_lines])
 
@@ -113,8 +113,11 @@ def format_list(response: Any, title: str, columns: Sequence[Column]) -> str:
     if response.get("truncated"):
         # Set by auto-paginating tools that hit their page cap before the
         # data ran out — make the incompleteness impossible to miss.
-        lines += ["", f"_Truncated at {len(results)} results — more exist. "
-                      "Continue from the cursor above with a paginated list call._"]
+        lines += [
+            "",
+            f"_Truncated at {len(results)} results — more exist. "
+            "Continue from the cursor above with a paginated list call._",
+        ]
     return "\n".join(lines)
 
 

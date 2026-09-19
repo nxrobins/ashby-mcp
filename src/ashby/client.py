@@ -9,7 +9,7 @@ so callers can see Ashby's structured error envelope.
 import json
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -53,10 +53,10 @@ class AshbyClient:
     """
 
     def __init__(self) -> None:
-        self.api_key: Optional[str] = None
+        self.api_key: str | None = None
         self.base_url = "https://api.ashbyhq.com"
         self.headers: dict = {}
-        self._http_client: Optional[httpx.AsyncClient] = None
+        self._http_client: httpx.AsyncClient | None = None
 
     def connect(self) -> bool:
         """Read ASHBY_API_KEY from the environment and configure headers.
@@ -95,7 +95,7 @@ class AshbyClient:
         reraise=True,
     )
     async def _make_request(
-        self, endpoint: str, method: str = "GET", data: Optional[dict] = None
+        self, endpoint: str, method: str = "GET", data: dict | None = None
     ) -> dict:
         self._ensure_connected()
 
@@ -117,8 +117,8 @@ class AshbyClient:
     async def _make_multipart_request(
         self,
         endpoint: str,
-        data: Optional[dict] = None,
-        files: Optional[dict] = None,
+        data: dict | None = None,
+        files: dict | None = None,
     ) -> dict:
         """Multipart POST for file uploads.
 

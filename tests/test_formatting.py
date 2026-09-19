@@ -136,6 +136,8 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
                     "createdAt": "2024-12-01T10:00:00Z",
                 },
                 {
+                    # No position/company/school/linkedInUrl — those cells
+                    # must render as the "—" placeholder, not blow up.
                     "id": "c2",
                     "name": "Alan Turing",
                     "primaryEmailAddress": {"value": "alan@example.com"},

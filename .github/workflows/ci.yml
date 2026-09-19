@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs uv; the Python version comes from .python-version. setup-uv
+      # stopped publishing major tags after v7, so pin the release commit.
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      # Render installs from uv.lock, so a pyproject.toml change that was not
+      # re-locked would silently ship the old pins. Fail early instead.
+      - run: uv lock --check
+
+      - run: uv sync --group dev
+
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run pytest
+
+      # Audit exactly what the lock pins (runtime + dev). --no-emit-project
+      # drops the editable `-e .` line, which pip-audit cannot hash-check.
+      - name: pip-audit the locked dependencies
+        run: uv export --format requirements-txt --no-emit-project | uvx pip-audit -r /dev/stdin --no-deps

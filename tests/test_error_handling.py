@@ -15,6 +15,9 @@ These tests pin the debuggability contract we want from the server:
 import logging
 from contextlib import asynccontextmanager
 
+import pytest
+from tenacity import wait_none
+
 BASE = "https://api.ashbyhq.com"
 
 
@@ -24,6 +27,20 @@ def _ok(httpx_mock, endpoint: str):
         url=f"{BASE}{endpoint}",
         json={"success": True, "results": {}},
     )
+
+
+@pytest.fixture
+def no_retry_backoff(ashby_client, monkeypatch):
+    """Zero out tenacity's exponential backoff for the duration of one test.
+
+    `_make_request` is wrapped by `@retry(wait=wait_exponential(...))`.
+    tenacity exposes that policy as `.retry` on the wrapped function and
+    copies it on every call, so swapping `wait` here takes effect on the
+    next request and monkeypatch restores the real backoff afterwards.
+    Without this, a test that exhausts all 4 attempts sleeps ~7 s of
+    real time (1 + 2 + 4 s) for no extra coverage.
+    """
+    monkeypatch.setattr(ashby_client._make_request.retry, "wait", wait_none())
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +65,7 @@ async def test_http_400_body_preserved(httpx_mock, call_tool):
     )
 
 
-async def test_http_500_body_preserved_after_retries(httpx_mock, call_tool):
+async def test_http_500_body_preserved_after_retries(httpx_mock, call_tool, no_retry_backoff):
     """After retries are exhausted, a 5xx body should still be surfaced."""
     # Tenacity retries up to 4 attempts total on 5xx.
     for _ in range(4):
@@ -61,6 +78,8 @@ async def test_http_500_body_preserved_after_retries(httpx_mock, call_tool):
     result = await call_tool("search_candidates", {"name": "x"})
     assert isinstance(result, str)
     assert "service_unavailable" in result or "503" in result
+    # All four attempts were actually made (not short-circuited by the patch).
+    assert len(httpx_mock.get_requests()) == 4
 
 
 # ---------------------------------------------------------------------------

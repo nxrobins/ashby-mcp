@@ -12,9 +12,9 @@ programmatic consumers).
 import json
 import os
 from collections.abc import Callable, Sequence
-from typing import Any, Union
+from typing import Any
 
-Accessor = Union[str, Callable[[Any], Any]]
+Accessor = str | Callable[[Any], Any]
 Column = tuple[str, Accessor]  # (header, accessor)
 
 

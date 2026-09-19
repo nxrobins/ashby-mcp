@@ -27,68 +27,76 @@ class Hints:
 READ_ONLY = Hints(read_only=True, destructive=False, idempotent=True)
 # Writes, by effect. "Destructive" follows the MCP spec: the call may
 # overwrite or remove existing data, as opposed to only adding to it.
-ADDITIVE = Hints(read_only=False, destructive=False, idempotent=False)             # creates a new record each call
-ADDITIVE_IDEMPOTENT = Hints(read_only=False, destructive=False, idempotent=True)   # attaches; repeating is a no-op
-DESTRUCTIVE = Hints(read_only=False, destructive=True, idempotent=False)           # overwrites; repeating adds more
-DESTRUCTIVE_IDEMPOTENT = Hints(read_only=False, destructive=True, idempotent=True) # overwrites/removes; repeating is a no-op
+ADDITIVE = Hints(
+    read_only=False, destructive=False, idempotent=False
+)  # creates a new record each call
+ADDITIVE_IDEMPOTENT = Hints(
+    read_only=False, destructive=False, idempotent=True
+)  # attaches; repeating is a no-op
+DESTRUCTIVE = Hints(
+    read_only=False, destructive=True, idempotent=False
+)  # overwrites; repeating adds more
+DESTRUCTIVE_IDEMPOTENT = Hints(
+    read_only=False, destructive=True, idempotent=True
+)  # overwrites/removes; repeating is a no-op
 
 _HINTS: dict[str, Hints] = {
     # Candidates
-    "create_candidate":           ADDITIVE,
-    "search_candidates":          READ_ONLY,
-    "list_candidates":            READ_ONLY,
-    "list_all_candidates":        READ_ONLY,
-    "get_candidate":              READ_ONLY,
-    "update_candidate":           DESTRUCTIVE_IDEMPOTENT,
-    "add_candidate_tag":          ADDITIVE_IDEMPOTENT,
-    "list_candidate_tags":        READ_ONLY,
-    "add_candidate_to_project":   ADDITIVE_IDEMPOTENT,
-    "create_candidate_note":      ADDITIVE,
-    "list_candidate_notes":       READ_ONLY,
+    "create_candidate": ADDITIVE,
+    "search_candidates": READ_ONLY,
+    "list_candidates": READ_ONLY,
+    "list_all_candidates": READ_ONLY,
+    "get_candidate": READ_ONLY,
+    "update_candidate": DESTRUCTIVE_IDEMPOTENT,
+    "add_candidate_tag": ADDITIVE_IDEMPOTENT,
+    "list_candidate_tags": READ_ONLY,
+    "add_candidate_to_project": ADDITIVE_IDEMPOTENT,
+    "create_candidate_note": ADDITIVE,
+    "list_candidate_notes": READ_ONLY,
     "list_candidate_client_info": READ_ONLY,
-    "anonymize_candidate":        DESTRUCTIVE_IDEMPOTENT,  # irreversible
-    "upload_candidate_resume":    DESTRUCTIVE,             # replaces the primary resume
-    "upload_candidate_file":      ADDITIVE,
+    "anonymize_candidate": DESTRUCTIVE_IDEMPOTENT,  # irreversible
+    "upload_candidate_resume": DESTRUCTIVE,  # replaces the primary resume
+    "upload_candidate_file": ADDITIVE,
     # Projects
-    "get_project":                READ_ONLY,
-    "list_projects":              READ_ONLY,
-    "search_projects":            READ_ONLY,
+    "get_project": READ_ONLY,
+    "list_projects": READ_ONLY,
+    "search_projects": READ_ONLY,
     # Custom fields
-    "list_custom_fields":         READ_ONLY,
-    "get_custom_field":           READ_ONLY,
-    "create_custom_field":        ADDITIVE,
-    "set_custom_field_value":     DESTRUCTIVE_IDEMPOTENT,
+    "list_custom_fields": READ_ONLY,
+    "get_custom_field": READ_ONLY,
+    "create_custom_field": ADDITIVE,
+    "set_custom_field_value": DESTRUCTIVE_IDEMPOTENT,
     # Jobs
-    "create_job":                 ADDITIVE,
-    "search_jobs":                READ_ONLY,
-    "list_jobs":                  READ_ONLY,
-    "get_job":                    READ_ONLY,
-    "update_job":                 DESTRUCTIVE_IDEMPOTENT,
-    "set_job_status":             DESTRUCTIVE_IDEMPOTENT,
+    "create_job": ADDITIVE,
+    "search_jobs": READ_ONLY,
+    "list_jobs": READ_ONLY,
+    "get_job": READ_ONLY,
+    "update_job": DESTRUCTIVE_IDEMPOTENT,
+    "set_job_status": DESTRUCTIVE_IDEMPOTENT,
     # Applications
-    "create_application":         ADDITIVE,
-    "list_applications":          READ_ONLY,
-    "get_application":            READ_ONLY,
-    "update_application":         DESTRUCTIVE_IDEMPOTENT,
-    "change_application_stage":   DESTRUCTIVE_IDEMPOTENT,
-    "change_application_source":  DESTRUCTIVE_IDEMPOTENT,
-    "transfer_application":       DESTRUCTIVE_IDEMPOTENT,
-    "add_application_hiring_team_member":    ADDITIVE_IDEMPOTENT,
+    "create_application": ADDITIVE,
+    "list_applications": READ_ONLY,
+    "get_application": READ_ONLY,
+    "update_application": DESTRUCTIVE_IDEMPOTENT,
+    "change_application_stage": DESTRUCTIVE_IDEMPOTENT,
+    "change_application_source": DESTRUCTIVE_IDEMPOTENT,
+    "transfer_application": DESTRUCTIVE_IDEMPOTENT,
+    "add_application_hiring_team_member": ADDITIVE_IDEMPOTENT,
     "remove_application_hiring_team_member": DESTRUCTIVE_IDEMPOTENT,
     # Interviews
-    "get_interview":              READ_ONLY,
-    "list_interviews":            READ_ONLY,
-    "create_interview_schedule":  ADDITIVE,
-    "list_interview_schedules":   READ_ONLY,
-    "update_interview_schedule":  DESTRUCTIVE,  # creates a new event when no interviewEventId is given
-    "cancel_interview_schedule":  DESTRUCTIVE_IDEMPOTENT,
-    "list_interview_events":      READ_ONLY,
-    "list_interview_plans":       READ_ONLY,
-    "list_interview_stages":      READ_ONLY,
-    "get_interview_stage":        READ_ONLY,
+    "get_interview": READ_ONLY,
+    "list_interviews": READ_ONLY,
+    "create_interview_schedule": ADDITIVE,
+    "list_interview_schedules": READ_ONLY,
+    "update_interview_schedule": DESTRUCTIVE,  # creates a new event when no interviewEventId is given
+    "cancel_interview_schedule": DESTRUCTIVE_IDEMPOTENT,
+    "list_interview_events": READ_ONLY,
+    "list_interview_plans": READ_ONLY,
+    "list_interview_stages": READ_ONLY,
+    "get_interview_stage": READ_ONLY,
     "list_interview_stage_groups": READ_ONLY,
-    "list_sources":               READ_ONLY,
-    "list_application_feedback":  READ_ONLY,
+    "list_sources": READ_ONLY,
+    "list_application_feedback": READ_ONLY,
 }
 
 # Tools that open a file on the machine running the server. See
@@ -146,23 +154,32 @@ def _catalog() -> list[types.Tool]:
                     "alternateEmailAddresses": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Additional email addresses"
+                        "description": "Additional email addresses",
                     },
-                    "sourceId": {"type": "string", "description": "ID of the source to attribute the candidate to"},
-                    "creditedToUserId": {"type": "string", "description": "ID of the user the candidate is credited to"},
+                    "sourceId": {
+                        "type": "string",
+                        "description": "ID of the source to attribute the candidate to",
+                    },
+                    "creditedToUserId": {
+                        "type": "string",
+                        "description": "ID of the user the candidate is credited to",
+                    },
                     "location": {
                         "type": "object",
                         "properties": {
                             "city": {"type": "string"},
                             "region": {"type": "string"},
-                            "country": {"type": "string"}
+                            "country": {"type": "string"},
                         },
-                        "description": "Candidate's location"
+                        "description": "Candidate's location",
                     },
-                    "createdAt": {"type": "string", "description": "ISO 8601 override for createdAt"}
+                    "createdAt": {
+                        "type": "string",
+                        "description": "ISO 8601 override for createdAt",
+                    },
                 },
-                "required": ["name"]
-            }
+                "required": ["name"],
+            },
         ),
         _tool(
             name="search_candidates",
@@ -171,9 +188,9 @@ def _catalog() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "email": {"type": "string", "description": "Candidate's email"},
-                    "name": {"type": "string", "description": "Candidate's name"}
-                }
-            }
+                    "name": {"type": "string", "description": "Candidate's name"},
+                },
+            },
         ),
         _tool(
             name="list_candidates",
@@ -181,11 +198,20 @@ def _catalog() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "cursor": {"type": "string", "description": "Opaque pagination cursor returned by a prior call"},
-                    "syncToken": {"type": "string", "description": "Token from a previous full sync — returns only changes since"},
-                    "limit": {"type": "integer", "description": "Max results per page (1-100, default 100)"}
-                }
-            }
+                    "cursor": {
+                        "type": "string",
+                        "description": "Opaque pagination cursor returned by a prior call",
+                    },
+                    "syncToken": {
+                        "type": "string",
+                        "description": "Token from a previous full sync — returns only changes since",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results per page (1-100, default 100)",
+                    },
+                },
+            },
         ),
         _tool(
             name="list_all_candidates",
@@ -193,20 +219,21 @@ def _catalog() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "syncToken": {"type": "string", "description": "Optional sync token for incremental fetch — returns only candidates changed since the token was issued"}
-                }
-            }
+                    "syncToken": {
+                        "type": "string",
+                        "description": "Optional sync token for incremental fetch — returns only candidates changed since the token was issued",
+                    }
+                },
+            },
         ),
         _tool(
             name="get_candidate",
             description="Fetch a single candidate by ID (full record including custom fields, applications, etc.)",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "id": {"type": "string", "description": "Candidate ID"}
-                },
-                "required": ["id"]
-            }
+                "properties": {"id": {"type": "string", "description": "Candidate ID"}},
+                "required": ["id"],
+            },
         ),
         _tool(
             name="update_candidate",
@@ -221,7 +248,10 @@ def _catalog() -> list[types.Tool]:
                     "linkedInUrl": {"type": "string"},
                     "githubUrl": {"type": "string"},
                     "websiteUrl": {"type": "string"},
-                    "alternateEmail": {"type": "string", "description": "Alternate email address to add to the candidate's profile"},
+                    "alternateEmail": {
+                        "type": "string",
+                        "description": "Alternate email address to add to the candidate's profile",
+                    },
                     "sourceId": {"type": "string"},
                     "creditedToUserId": {"type": "string"},
                     "location": {
@@ -229,36 +259,30 @@ def _catalog() -> list[types.Tool]:
                         "properties": {
                             "city": {"type": "string"},
                             "region": {"type": "string"},
-                            "country": {"type": "string"}
-                        }
+                            "country": {"type": "string"},
+                        },
                     },
                     "socialLinks": {
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "properties": {
-                                "type": {"type": "string"},
-                                "url": {"type": "string"}
-                            }
+                            "properties": {"type": {"type": "string"}, "url": {"type": "string"}},
                         },
-                        "description": "Replaces existing socialLinks. If sent, linkedInUrl/githubUrl/websiteUrl are ignored."
+                        "description": "Replaces existing socialLinks. If sent, linkedInUrl/githubUrl/websiteUrl are ignored.",
                     },
-                    "createdAt": {"type": "string", "description": "ISO 8601 date override"}
+                    "createdAt": {"type": "string", "description": "ISO 8601 date override"},
                 },
-                "required": ["candidateId"]
-            }
+                "required": ["candidateId"],
+            },
         ),
         _tool(
             name="add_candidate_tag",
             description="Attach a tag to a candidate. Use list_candidate_tags to discover tagId.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "candidateId": {"type": "string"},
-                    "tagId": {"type": "string"}
-                },
-                "required": ["candidateId", "tagId"]
-            }
+                "properties": {"candidateId": {"type": "string"}, "tagId": {"type": "string"}},
+                "required": ["candidateId", "tagId"],
+            },
         ),
         _tool(
             name="list_candidate_tags",
@@ -266,24 +290,24 @@ def _catalog() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "includeArchived": {"type": "boolean", "description": "Include archived tags (default false)"},
+                    "includeArchived": {
+                        "type": "boolean",
+                        "description": "Include archived tags (default false)",
+                    },
                     "cursor": {"type": "string"},
                     "syncToken": {"type": "string"},
-                    "limit": {"type": "integer"}
-                }
-            }
+                    "limit": {"type": "integer"},
+                },
+            },
         ),
         _tool(
             name="add_candidate_to_project",
             description="Attach a candidate to a project.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "candidateId": {"type": "string"},
-                    "projectId": {"type": "string"}
-                },
-                "required": ["candidateId", "projectId"]
-            }
+                "properties": {"candidateId": {"type": "string"}, "projectId": {"type": "string"}},
+                "required": ["candidateId", "projectId"],
+            },
         ),
         _tool(
             name="create_candidate_note",
@@ -293,10 +317,10 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "candidateId": {"type": "string"},
                     "note": {"type": "string", "description": "Note text"},
-                    "createdAt": {"type": "string", "description": "ISO 8601 timestamp override"}
+                    "createdAt": {"type": "string", "description": "ISO 8601 timestamp override"},
                 },
-                "required": ["candidateId", "note"]
-            }
+                "required": ["candidateId", "note"],
+            },
         ),
         _tool(
             name="list_candidate_notes",
@@ -307,10 +331,10 @@ def _catalog() -> list[types.Tool]:
                     "candidateId": {"type": "string"},
                     "cursor": {"type": "string"},
                     "syncToken": {"type": "string"},
-                    "limit": {"type": "integer"}
+                    "limit": {"type": "integer"},
                 },
-                "required": ["candidateId"]
-            }
+                "required": ["candidateId"],
+            },
         ),
         _tool(
             name="list_candidate_client_info",
@@ -321,21 +345,19 @@ def _catalog() -> list[types.Tool]:
                     "candidateId": {"type": "string"},
                     "cursor": {"type": "string"},
                     "syncToken": {"type": "string"},
-                    "limit": {"type": "integer"}
+                    "limit": {"type": "integer"},
                 },
-                "required": ["candidateId"]
-            }
+                "required": ["candidateId"],
+            },
         ),
         _tool(
             name="anonymize_candidate",
             description="Anonymize a candidate (GDPR / data retention). Irreversible.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "candidateId": {"type": "string"}
-                },
-                "required": ["candidateId"]
-            }
+                "properties": {"candidateId": {"type": "string"}},
+                "required": ["candidateId"],
+            },
         ),
         _tool(
             name="upload_candidate_resume",
@@ -344,10 +366,13 @@ def _catalog() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "candidateId": {"type": "string"},
-                    "file_path": {"type": "string", "description": "Absolute local path to the resume file (PDF, docx, etc.)"}
+                    "file_path": {
+                        "type": "string",
+                        "description": "Absolute local path to the resume file (PDF, docx, etc.)",
+                    },
                 },
-                "required": ["candidateId", "file_path"]
-            }
+                "required": ["candidateId", "file_path"],
+            },
         ),
         _tool(
             name="upload_candidate_file",
@@ -356,23 +381,23 @@ def _catalog() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "candidateId": {"type": "string"},
-                    "file_path": {"type": "string", "description": "Absolute local path to the file"}
+                    "file_path": {
+                        "type": "string",
+                        "description": "Absolute local path to the file",
+                    },
                 },
-                "required": ["candidateId", "file_path"]
-            }
+                "required": ["candidateId", "file_path"],
+            },
         ),
-
         # Project Tools
         _tool(
             name="get_project",
             description="Fetch a single project by id (returns title, archived state, associated jobs, etc.).",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "projectId": {"type": "string"}
-                },
-                "required": ["projectId"]
-            }
+                "properties": {"projectId": {"type": "string"}},
+                "required": ["projectId"],
+            },
         ),
         _tool(
             name="list_projects",
@@ -381,10 +406,13 @@ def _catalog() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "cursor": {"type": "string", "description": "Opaque pagination cursor"},
-                    "syncToken": {"type": "string", "description": "Token from a previous full sync — returns only changes since"},
-                    "limit": {"type": "integer", "description": "Max results (1-100, default 100)"}
-                }
-            }
+                    "syncToken": {
+                        "type": "string",
+                        "description": "Token from a previous full sync — returns only changes since",
+                    },
+                    "limit": {"type": "integer", "description": "Max results (1-100, default 100)"},
+                },
+            },
         ),
         _tool(
             name="search_projects",
@@ -394,10 +422,9 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "title": {"type": "string", "description": "Project title to search for"}
                 },
-                "required": ["title"]
-            }
+                "required": ["title"],
+            },
         ),
-
         # Custom Field Tools
         _tool(
             name="list_custom_fields",
@@ -407,26 +434,35 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "objectType": {
                         "type": "string",
-                        "enum": ["Application", "Candidate", "Job", "Employee", "Talent_Project", "Opening_Version", "Offer_Version"],
-                        "description": "Client-side filter — only return fields attached to this object type"
+                        "enum": [
+                            "Application",
+                            "Candidate",
+                            "Job",
+                            "Employee",
+                            "Talent_Project",
+                            "Opening_Version",
+                            "Offer_Version",
+                        ],
+                        "description": "Client-side filter — only return fields attached to this object type",
                     },
-                    "includeArchived": {"type": "boolean", "description": "Include archived fields (default false)"},
+                    "includeArchived": {
+                        "type": "boolean",
+                        "description": "Include archived fields (default false)",
+                    },
                     "cursor": {"type": "string"},
                     "syncToken": {"type": "string"},
-                    "limit": {"type": "integer"}
-                }
-            }
+                    "limit": {"type": "integer"},
+                },
+            },
         ),
         _tool(
             name="get_custom_field",
             description="Fetch a single custom field definition by id.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "customFieldId": {"type": "string"}
-                },
-                "required": ["customFieldId"]
-            }
+                "properties": {"customFieldId": {"type": "string"}},
+                "required": ["customFieldId"],
+            },
         ),
         _tool(
             name="create_custom_field",
@@ -437,11 +473,29 @@ def _catalog() -> list[types.Tool]:
                     "title": {"type": "string"},
                     "fieldType": {
                         "type": "string",
-                        "enum": ["Boolean", "CompensationRange", "Date", "LongText", "MultiValueSelect", "Number", "NumberRange", "String", "ValueSelect"]
+                        "enum": [
+                            "Boolean",
+                            "CompensationRange",
+                            "Date",
+                            "LongText",
+                            "MultiValueSelect",
+                            "Number",
+                            "NumberRange",
+                            "String",
+                            "ValueSelect",
+                        ],
                     },
                     "objectType": {
                         "type": "string",
-                        "enum": ["Application", "Candidate", "Job", "Employee", "Talent_Project", "Opening_Version", "Offer_Version"]
+                        "enum": [
+                            "Application",
+                            "Candidate",
+                            "Job",
+                            "Employee",
+                            "Talent_Project",
+                            "Opening_Version",
+                            "Offer_Version",
+                        ],
                     },
                     "description": {"type": "string"},
                     "selectableValues": {
@@ -451,16 +505,22 @@ def _catalog() -> list[types.Tool]:
                             "type": "object",
                             "properties": {
                                 "label": {"type": "string"},
-                                "value": {"type": "string"}
+                                "value": {"type": "string"},
                             },
-                            "required": ["label", "value"]
-                        }
+                            "required": ["label", "value"],
+                        },
                     },
-                    "isDateOnlyField": {"type": "boolean", "description": "Date fields only — whether the field has no time component"},
-                    "isExposableToCandidate": {"type": "boolean", "description": "Must be true for the field to be usable in email templates (default false)"}
+                    "isDateOnlyField": {
+                        "type": "boolean",
+                        "description": "Date fields only — whether the field has no time component",
+                    },
+                    "isExposableToCandidate": {
+                        "type": "boolean",
+                        "description": "Must be true for the field to be usable in email templates (default false)",
+                    },
                 },
-                "required": ["title", "fieldType", "objectType"]
-            }
+                "required": ["title", "fieldType", "objectType"],
+            },
         ),
         _tool(
             name="set_custom_field_value",
@@ -473,18 +533,24 @@ def _catalog() -> list[types.Tool]:
                 "  Number → number\n"
                 "  ValueSelect → string matching one of the field's allowed values\n"
                 "  MultiValueSelect → array of allowed-value strings\n"
-                "  NumberRange → { \"type\": \"number-range\", \"minValue\": N, \"maxValue\": N }\n"
+                '  NumberRange → { "type": "number-range", "minValue": N, "maxValue": N }\n'
                 "Use list_custom_fields first to discover fieldId and the allowed value set."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "objectId": {"type": "string", "description": "ID of the Candidate / Application / Job / Opening"},
+                    "objectId": {
+                        "type": "string",
+                        "description": "ID of the Candidate / Application / Job / Opening",
+                    },
                     "objectType": {
                         "type": "string",
-                        "enum": ["Application", "Candidate", "Job", "Opening"]
+                        "enum": ["Application", "Candidate", "Job", "Opening"],
                     },
-                    "fieldId": {"type": "string", "description": "Custom field definition id (from list_custom_fields)"},
+                    "fieldId": {
+                        "type": "string",
+                        "description": "Custom field definition id (from list_custom_fields)",
+                    },
                     "fieldValue": {
                         "description": "Value to store. Type depends on fieldType — see tool description.",
                         "oneOf": [
@@ -497,16 +563,15 @@ def _catalog() -> list[types.Tool]:
                                 "properties": {
                                     "type": {"type": "string"},
                                     "minValue": {"type": "number"},
-                                    "maxValue": {"type": "number"}
-                                }
-                            }
-                        ]
-                    }
+                                    "maxValue": {"type": "number"},
+                                },
+                            },
+                        ],
+                    },
                 },
-                "required": ["objectId", "objectType", "fieldId", "fieldValue"]
-            }
+                "required": ["objectId", "objectType", "fieldId", "fieldValue"],
+            },
         ),
-
         # Job Management Tools
         _tool(
             name="create_job",
@@ -517,12 +582,18 @@ def _catalog() -> list[types.Tool]:
                     "title": {"type": "string", "description": "Job title"},
                     "teamId": {"type": "string", "description": "Department/team id"},
                     "locationId": {"type": "string", "description": "Primary location id"},
-                    "defaultInterviewPlanId": {"type": "string", "description": "Required for the job to be opened"},
-                    "jobTemplateId": {"type": "string", "description": "Id of an active job template"},
-                    "brandId": {"type": "string"}
+                    "defaultInterviewPlanId": {
+                        "type": "string",
+                        "description": "Required for the job to be opened",
+                    },
+                    "jobTemplateId": {
+                        "type": "string",
+                        "description": "Id of an active job template",
+                    },
+                    "brandId": {"type": "string"},
                 },
-                "required": ["title"]
-            }
+                "required": ["title"],
+            },
         ),
         _tool(
             name="search_jobs",
@@ -533,10 +604,10 @@ def _catalog() -> list[types.Tool]:
                     "title": {"type": "string", "description": "Job title to search for"},
                     "location": {"type": "string", "description": "Filter by location"},
                     "department": {"type": "string", "description": "Filter by department"},
-                    "include_unlisted": {"type": "boolean", "description": "Include unlisted jobs"}
+                    "include_unlisted": {"type": "boolean", "description": "Include unlisted jobs"},
                 },
-                "required": ["title"]
-            }
+                "required": ["title"],
+            },
         ),
         _tool(
             name="list_jobs",
@@ -546,15 +617,27 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "status": {
                         "type": "array",
-                        "items": {"type": "string", "enum": ["Draft", "Open", "Closed", "Archived"]},
-                        "description": "Statuses to include. Defaults to [\"Open\"].",
+                        "items": {
+                            "type": "string",
+                            "enum": ["Draft", "Open", "Closed", "Archived"],
+                        },
+                        "description": 'Statuses to include. Defaults to ["Open"].',
                     },
-                    "openedAfter": {"type": "integer", "description": "Return jobs opened after this unix epoch millis timestamp"},
-                    "openedBefore": {"type": "integer", "description": "Return jobs opened before this unix epoch millis timestamp"},
-                    "cursor": {"type": "string", "description": "Pagination cursor from a previous response"},
-                    "limit": {"type": "integer", "description": "Max results per page"}
-                }
-            }
+                    "openedAfter": {
+                        "type": "integer",
+                        "description": "Return jobs opened after this unix epoch millis timestamp",
+                    },
+                    "openedBefore": {
+                        "type": "integer",
+                        "description": "Return jobs opened before this unix epoch millis timestamp",
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "Pagination cursor from a previous response",
+                    },
+                    "limit": {"type": "integer", "description": "Max results per page"},
+                },
+            },
         ),
         _tool(
             name="get_job",
@@ -567,11 +650,11 @@ def _catalog() -> list[types.Tool]:
                     "expand": {
                         "type": "array",
                         "items": {"type": "string", "enum": ["location", "openings"]},
-                        "description": "Optional related objects to expand"
-                    }
+                        "description": "Optional related objects to expand",
+                    },
                 },
-                "required": ["id"]
-            }
+                "required": ["id"],
+            },
         ),
         _tool(
             name="update_job",
@@ -584,10 +667,10 @@ def _catalog() -> list[types.Tool]:
                     "teamId": {"type": "string"},
                     "locationId": {"type": "string"},
                     "defaultInterviewPlanId": {"type": "string"},
-                    "customRequisitionId": {"type": "string"}
+                    "customRequisitionId": {"type": "string"},
                 },
-                "required": ["jobId"]
-            }
+                "required": ["jobId"],
+            },
         ),
         _tool(
             name="set_job_status",
@@ -596,12 +679,11 @@ def _catalog() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "jobId": {"type": "string"},
-                    "status": {"type": "string", "enum": ["Draft", "Open", "Closed", "Archived"]}
+                    "status": {"type": "string", "enum": ["Draft", "Open", "Closed", "Archived"]},
                 },
-                "required": ["jobId", "status"]
-            }
+                "required": ["jobId", "status"],
+            },
         ),
-
         # Application Management Tools
         _tool(
             name="create_application",
@@ -611,14 +693,20 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "candidateId": {"type": "string"},
                     "jobId": {"type": "string"},
-                    "interviewPlanId": {"type": "string", "description": "Defaults to the job's default plan"},
-                    "interviewStageId": {"type": "string", "description": "Stage within the plan; 'FirstPreInterviewScreen' is a special accepted value"},
+                    "interviewPlanId": {
+                        "type": "string",
+                        "description": "Defaults to the job's default plan",
+                    },
+                    "interviewStageId": {
+                        "type": "string",
+                        "description": "Stage within the plan; 'FirstPreInterviewScreen' is a special accepted value",
+                    },
                     "sourceId": {"type": "string", "description": "Source attribution"},
                     "creditedToUserId": {"type": "string"},
-                    "createdAt": {"type": "string", "description": "ISO date override"}
+                    "createdAt": {"type": "string", "description": "ISO date override"},
                 },
-                "required": ["candidateId", "jobId"]
-            }
+                "required": ["candidateId", "jobId"],
+            },
         ),
         _tool(
             name="list_applications",
@@ -632,9 +720,9 @@ def _catalog() -> list[types.Tool]:
                     "expand": {"type": "array", "items": {"type": "string", "enum": ["openings"]}},
                     "cursor": {"type": "string"},
                     "syncToken": {"type": "string"},
-                    "limit": {"type": "integer"}
-                }
-            }
+                    "limit": {"type": "integer"},
+                },
+            },
         ),
         _tool(
             name="get_application",
@@ -643,13 +731,19 @@ def _catalog() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "applicationId": {"type": "string"},
-                    "submittedFormInstanceId": {"type": "string", "description": "Alternative to applicationId — fetch by form submission id"},
+                    "submittedFormInstanceId": {
+                        "type": "string",
+                        "description": "Alternative to applicationId — fetch by form submission id",
+                    },
                     "expand": {
                         "type": "array",
-                        "items": {"type": "string", "enum": ["openings", "applicationFormSubmissions", "referrals"]}
-                    }
-                }
-            }
+                        "items": {
+                            "type": "string",
+                            "enum": ["openings", "applicationFormSubmissions", "referrals"],
+                        },
+                    },
+                },
+            },
         ),
         _tool(
             name="update_application",
@@ -661,10 +755,13 @@ def _catalog() -> list[types.Tool]:
                     "sourceId": {"type": "string"},
                     "creditedToUserId": {"type": "string"},
                     "createdAt": {"type": "string", "description": "ISO date"},
-                    "sendNotifications": {"type": "boolean", "description": "Notify subscribed users (default true)"}
+                    "sendNotifications": {
+                        "type": "boolean",
+                        "description": "Notify subscribed users (default true)",
+                    },
                 },
-                "required": ["applicationId"]
-            }
+                "required": ["applicationId"],
+            },
         ),
         _tool(
             name="change_application_stage",
@@ -674,10 +771,13 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "applicationId": {"type": "string"},
                     "interviewStageId": {"type": "string"},
-                    "archiveReasonId": {"type": "string", "description": "Required when target stage type is 'Archived'"}
+                    "archiveReasonId": {
+                        "type": "string",
+                        "description": "Required when target stage type is 'Archived'",
+                    },
                 },
-                "required": ["applicationId", "interviewStageId"]
-            }
+                "required": ["applicationId", "interviewStageId"],
+            },
         ),
         _tool(
             name="change_application_source",
@@ -686,10 +786,10 @@ def _catalog() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "applicationId": {"type": "string"},
-                    "sourceId": {"type": ["string", "null"]}
+                    "sourceId": {"type": ["string", "null"]},
                 },
-                "required": ["applicationId", "sourceId"]
-            }
+                "required": ["applicationId", "sourceId"],
+            },
         ),
         _tool(
             name="transfer_application",
@@ -701,10 +801,10 @@ def _catalog() -> list[types.Tool]:
                     "jobId": {"type": "string"},
                     "interviewPlanId": {"type": "string"},
                     "interviewStageId": {"type": "string"},
-                    "startAutomaticActivities": {"type": "boolean", "description": "Default true"}
+                    "startAutomaticActivities": {"type": "boolean", "description": "Default true"},
                 },
-                "required": ["applicationId", "jobId"]
-            }
+                "required": ["applicationId", "jobId"],
+            },
         ),
         _tool(
             name="add_application_hiring_team_member",
@@ -714,10 +814,10 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "applicationId": {"type": "string"},
                     "teamMemberId": {"type": "string", "description": "User id to assign"},
-                    "roleId": {"type": "string", "description": "Hiring team role id"}
+                    "roleId": {"type": "string", "description": "Hiring team role id"},
                 },
-                "required": ["applicationId", "teamMemberId", "roleId"]
-            }
+                "required": ["applicationId", "teamMemberId", "roleId"],
+            },
         ),
         _tool(
             name="remove_application_hiring_team_member",
@@ -727,12 +827,11 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "applicationId": {"type": "string"},
                     "teamMemberId": {"type": "string"},
-                    "roleId": {"type": "string"}
+                    "roleId": {"type": "string"},
                 },
-                "required": ["applicationId", "teamMemberId", "roleId"]
-            }
+                "required": ["applicationId", "teamMemberId", "roleId"],
+            },
         ),
-        
         # Interview Management Tools
         #
         # Ashby splits this into two endpoint groups:
@@ -743,11 +842,9 @@ def _catalog() -> list[types.Tool]:
             description="Fetch a single interview-type definition by id (not a scheduled event; see get_interview_schedule for that).",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "id": {"type": "string", "description": "Interview id"}
-                },
-                "required": ["id"]
-            }
+                "properties": {"id": {"type": "string", "description": "Interview id"}},
+                "required": ["id"],
+            },
         ),
         _tool(
             name="list_interviews",
@@ -758,13 +855,13 @@ def _catalog() -> list[types.Tool]:
                     "includeArchived": {"type": "boolean"},
                     "includeNonSharedInterviews": {
                         "type": "boolean",
-                        "description": "Default false; set true to include interviews tied to specific jobs"
+                        "description": "Default false; set true to include interviews tied to specific jobs",
                     },
                     "cursor": {"type": "string"},
                     "syncToken": {"type": "string"},
-                    "limit": {"type": "integer"}
-                }
-            }
+                    "limit": {"type": "integer"},
+                },
+            },
         ),
         _tool(
             name="create_interview_schedule",
@@ -781,7 +878,10 @@ def _catalog() -> list[types.Tool]:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "startTime": {"type": "string", "description": "ISO 8601, e.g. 2023-01-30T15:00:00.000Z"},
+                                "startTime": {
+                                    "type": "string",
+                                    "description": "ISO 8601, e.g. 2023-01-30T15:00:00.000Z",
+                                },
                                 "endTime": {"type": "string", "description": "ISO 8601"},
                                 "interviewers": {
                                     "type": "array",
@@ -789,19 +889,22 @@ def _catalog() -> list[types.Tool]:
                                         "type": "object",
                                         "properties": {
                                             "email": {"type": "string"},
-                                            "feedbackRequired": {"type": "boolean"}
+                                            "feedbackRequired": {"type": "boolean"},
                                         },
-                                        "required": ["email"]
-                                    }
+                                        "required": ["email"],
+                                    },
                                 },
-                                "interviewId": {"type": "string", "description": "Id of the interview-type this event uses"}
+                                "interviewId": {
+                                    "type": "string",
+                                    "description": "Id of the interview-type this event uses",
+                                },
                             },
-                            "required": ["startTime", "endTime", "interviewers"]
-                        }
-                    }
+                            "required": ["startTime", "endTime", "interviewers"],
+                        },
+                    },
                 },
-                "required": ["applicationId", "interviewEvents"]
-            }
+                "required": ["applicationId", "interviewEvents"],
+            },
         ),
         _tool(
             name="list_interview_schedules",
@@ -814,9 +917,9 @@ def _catalog() -> list[types.Tool]:
                     "createdAfter": {"type": "integer", "description": "Unix epoch millis"},
                     "cursor": {"type": "string"},
                     "syncToken": {"type": "string"},
-                    "limit": {"type": "integer"}
-                }
-            }
+                    "limit": {"type": "integer"},
+                },
+            },
         ),
         _tool(
             name="update_interview_schedule",
@@ -838,17 +941,17 @@ def _catalog() -> list[types.Tool]:
                                     "type": "object",
                                     "properties": {
                                         "email": {"type": "string"},
-                                        "feedbackRequired": {"type": "boolean"}
+                                        "feedbackRequired": {"type": "boolean"},
                                     },
-                                    "required": ["email"]
-                                }
+                                    "required": ["email"],
+                                },
                             },
-                            "interviewId": {"type": "string"}
-                        }
-                    }
+                            "interviewId": {"type": "string"},
+                        },
+                    },
                 },
-                "required": ["interviewScheduleId", "interviewEvent"]
-            }
+                "required": ["interviewScheduleId", "interviewEvent"],
+            },
         ),
         _tool(
             name="cancel_interview_schedule",
@@ -857,10 +960,10 @@ def _catalog() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "id": {"type": "string", "description": "Interview schedule id"},
-                    "allowReschedule": {"type": "boolean", "description": "Default false"}
+                    "allowReschedule": {"type": "boolean", "description": "Default false"},
                 },
-                "required": ["id"]
-            }
+                "required": ["id"],
+            },
         ),
         _tool(
             name="list_interview_events",
@@ -876,11 +979,11 @@ def _catalog() -> list[types.Tool]:
                     "expand": {
                         "type": "array",
                         "items": {"type": "string", "enum": ["interview"]},
-                        "description": "Optional — include the interview-type definition for each event"
-                    }
+                        "description": "Optional — include the interview-type definition for each event",
+                    },
                 },
-                "required": ["interviewScheduleId"]
-            }
+                "required": ["interviewScheduleId"],
+            },
         ),
         _tool(
             name="list_interview_plans",
@@ -888,42 +991,39 @@ def _catalog() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "includeArchived": {"type": "boolean", "description": "Include archived plans (default false)"}
-                }
-            }
+                    "includeArchived": {
+                        "type": "boolean",
+                        "description": "Include archived plans (default false)",
+                    }
+                },
+            },
         ),
         _tool(
             name="list_interview_stages",
             description="List all interview stages for a given interview plan, in order. Use this to discover interviewStageId values for change_application_stage / transfer_application.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "interviewPlanId": {"type": "string"}
-                },
-                "required": ["interviewPlanId"]
-            }
+                "properties": {"interviewPlanId": {"type": "string"}},
+                "required": ["interviewPlanId"],
+            },
         ),
         _tool(
             name="get_interview_stage",
             description="Fetch a single interview stage by id.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "interviewStageId": {"type": "string"}
-                },
-                "required": ["interviewStageId"]
-            }
+                "properties": {"interviewStageId": {"type": "string"}},
+                "required": ["interviewStageId"],
+            },
         ),
         _tool(
             name="list_interview_stage_groups",
             description="List interview stage groups for an interview plan, in order. Groups organize stages into logical phases (e.g. Pre-Screen, Onsite, Offer).",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "interviewPlanId": {"type": "string"}
-                },
-                "required": ["interviewPlanId"]
-            }
+                "properties": {"interviewPlanId": {"type": "string"}},
+                "required": ["interviewPlanId"],
+            },
         ),
         _tool(
             name="list_sources",
@@ -933,10 +1033,10 @@ def _catalog() -> list[types.Tool]:
                 "properties": {
                     "includeArchived": {
                         "type": "boolean",
-                        "description": "Include archived sources in results (default false)"
+                        "description": "Include archived sources in results (default false)",
                     }
-                }
-            }
+                },
+            },
         ),
         _tool(
             name="list_application_feedback",
@@ -955,10 +1055,10 @@ def _catalog() -> list[types.Tool]:
                     "applicationId": {"type": "string"},
                     "cursor": {"type": "string"},
                     "syncToken": {"type": "string"},
-                    "limit": {"type": "integer"}
+                    "limit": {"type": "integer"},
                 },
-                "required": ["applicationId"]
-            }
+                "required": ["applicationId"],
+            },
         ),
     ]
 

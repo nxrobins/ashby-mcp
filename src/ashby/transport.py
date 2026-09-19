@@ -129,9 +129,10 @@ def build_http_app(server: Server, bearer_token: str | None):
         if not _authorized(request.headers.get("authorization")):
             return _unauthorized()
         # connect_sse owns the response lifecycle.
-        async with sse.connect_sse(
-            request.scope, request.receive, request._send
-        ) as (read_stream, write_stream):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as (
+            read_stream,
+            write_stream,
+        ):
             await server.run(read_stream, write_stream, _init_options(server))
         return Response()
 
@@ -171,7 +172,9 @@ async def run_http(server: Server, host: str, port: int) -> None:
     if bearer_token is None:
         logger.warning(
             "MCP_BEARER_TOKEN is not set — serving %s:%d WITHOUT authentication "
-            "(only acceptable for local testing)", host, port,
+            "(only acceptable for local testing)",
+            host,
+            port,
         )
     app = build_http_app(server, bearer_token)
 

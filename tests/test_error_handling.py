@@ -12,11 +12,8 @@ These tests pin the debuggability contract we want from the server:
   or agent loop would take for a successful result.
 """
 
-import json
 import logging
 from contextlib import asynccontextmanager
-
-import pytest
 
 BASE = "https://api.ashbyhq.com"
 
@@ -149,6 +146,8 @@ async def test_long_error_bodies_are_truncated_in_logs(httpx_mock, call_tool, ca
         assert "truncated" in message
     assert isinstance(result, str)
     assert "x" * 5000 in result
+
+
 # ---------------------------------------------------------------------------
 # MCP layer — failures must arrive as `isError: true` results
 # ---------------------------------------------------------------------------

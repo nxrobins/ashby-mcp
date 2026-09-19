@@ -19,7 +19,8 @@ explains why that is what makes them real MCP errors.
 import json
 import logging
 import os
-from typing import Any, Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Any
 
 import mcp.types as types
 
@@ -77,55 +78,61 @@ def _raise_if_ashby_error(tool_name: str, payload: Any) -> None:
 
 _SIMPLE: dict[str, tuple[str, str]] = {
     # Candidates
-    "create_candidate":           ("/candidate.create",           "Created candidate"),
-    "search_candidates":          ("/candidate.search",           "Search results"),
-    "list_candidates":            ("/candidate.list",             "Candidate list"),
-    "get_candidate":              ("/candidate.info",             "Candidate"),
-    "update_candidate":           ("/candidate.update",           "Updated candidate"),
-    "add_candidate_tag":          ("/candidate.addTag",           "Tag added"),
-    "list_candidate_tags":        ("/candidateTag.list",          "Candidate tags"),
-    "add_candidate_to_project":   ("/candidate.addProject",       "Project added"),
-    "create_candidate_note":      ("/candidate.createNote",       "Note created"),
-    "list_candidate_notes":       ("/candidate.listNotes",        "Candidate notes"),
-    "list_candidate_client_info": ("/candidate.listClientInfo",   "Candidate client info"),
-    "anonymize_candidate":        ("/candidate.anonymize",        "Anonymized"),
+    "create_candidate": ("/candidate.create", "Created candidate"),
+    "search_candidates": ("/candidate.search", "Search results"),
+    "list_candidates": ("/candidate.list", "Candidate list"),
+    "get_candidate": ("/candidate.info", "Candidate"),
+    "update_candidate": ("/candidate.update", "Updated candidate"),
+    "add_candidate_tag": ("/candidate.addTag", "Tag added"),
+    "list_candidate_tags": ("/candidateTag.list", "Candidate tags"),
+    "add_candidate_to_project": ("/candidate.addProject", "Project added"),
+    "create_candidate_note": ("/candidate.createNote", "Note created"),
+    "list_candidate_notes": ("/candidate.listNotes", "Candidate notes"),
+    "list_candidate_client_info": ("/candidate.listClientInfo", "Candidate client info"),
+    "anonymize_candidate": ("/candidate.anonymize", "Anonymized"),
     # Projects
-    "get_project":                ("/project.info",               "Project"),
-    "list_projects":              ("/project.list",               "Projects"),
-    "search_projects":            ("/project.search",             "Project search results"),
+    "get_project": ("/project.info", "Project"),
+    "list_projects": ("/project.list", "Projects"),
+    "search_projects": ("/project.search", "Project search results"),
     # Custom fields
-    "get_custom_field":           ("/customField.info",           "Custom field"),
-    "create_custom_field":        ("/customField.create",         "Custom field created"),
-    "set_custom_field_value":     ("/customField.setValue",       "Custom field value set"),
+    "get_custom_field": ("/customField.info", "Custom field"),
+    "create_custom_field": ("/customField.create", "Custom field created"),
+    "set_custom_field_value": ("/customField.setValue", "Custom field value set"),
     # Jobs
-    "create_job":                 ("/job.create",                 "Created job"),
-    "search_jobs":                ("/job.search",                 "Job search results"),
-    "get_job":                    ("/job.info",                   "Job"),
-    "update_job":                 ("/job.update",                 "Job updated"),
-    "set_job_status":             ("/job.setStatus",              "Job status set"),
+    "create_job": ("/job.create", "Created job"),
+    "search_jobs": ("/job.search", "Job search results"),
+    "get_job": ("/job.info", "Job"),
+    "update_job": ("/job.update", "Job updated"),
+    "set_job_status": ("/job.setStatus", "Job status set"),
     # Applications
-    "create_application":         ("/application.create",         "Created application"),
-    "list_applications":          ("/application.list",           "Applications"),
-    "get_application":            ("/application.info",           "Application"),
-    "update_application":         ("/application.update",         "Application updated"),
-    "change_application_stage":   ("/application.change_stage",   "Stage changed"),
-    "change_application_source":  ("/application.change_source",  "Source changed"),
-    "transfer_application":       ("/application.transfer",       "Application transferred"),
-    "add_application_hiring_team_member":    ("/application.addHiringTeamMember",    "Hiring team member added"),
-    "remove_application_hiring_team_member": ("/application.removeHiringTeamMember", "Hiring team member removed"),
+    "create_application": ("/application.create", "Created application"),
+    "list_applications": ("/application.list", "Applications"),
+    "get_application": ("/application.info", "Application"),
+    "update_application": ("/application.update", "Application updated"),
+    "change_application_stage": ("/application.change_stage", "Stage changed"),
+    "change_application_source": ("/application.change_source", "Source changed"),
+    "transfer_application": ("/application.transfer", "Application transferred"),
+    "add_application_hiring_team_member": (
+        "/application.addHiringTeamMember",
+        "Hiring team member added",
+    ),
+    "remove_application_hiring_team_member": (
+        "/application.removeHiringTeamMember",
+        "Hiring team member removed",
+    ),
     # Interviews
-    "get_interview":              ("/interview.info",             "Interview"),
-    "list_interviews":            ("/interview.list",             "Interviews"),
-    "create_interview_schedule":  ("/interviewSchedule.create",   "Interview scheduled"),
-    "list_interview_schedules":   ("/interviewSchedule.list",     "Interview schedules"),
-    "update_interview_schedule":  ("/interviewSchedule.update",   "Interview schedule updated"),
-    "cancel_interview_schedule":  ("/interviewSchedule.cancel",   "Interview schedule cancelled"),
-    "list_interview_events":      ("/interviewEvent.list",        "Interview events"),
-    "list_interview_plans":       ("/interviewPlan.list",         "Interview plans"),
-    "list_interview_stages":      ("/interviewStage.list",        "Interview stages"),
-    "get_interview_stage":        ("/interviewStage.info",        "Interview stage"),
-    "list_interview_stage_groups": ("/interviewStageGroup.list",  "Interview stage groups"),
-    "list_application_feedback":  ("/applicationFeedback.list",   "Application feedback"),
+    "get_interview": ("/interview.info", "Interview"),
+    "list_interviews": ("/interview.list", "Interviews"),
+    "create_interview_schedule": ("/interviewSchedule.create", "Interview scheduled"),
+    "list_interview_schedules": ("/interviewSchedule.list", "Interview schedules"),
+    "update_interview_schedule": ("/interviewSchedule.update", "Interview schedule updated"),
+    "cancel_interview_schedule": ("/interviewSchedule.cancel", "Interview schedule cancelled"),
+    "list_interview_events": ("/interviewEvent.list", "Interview events"),
+    "list_interview_plans": ("/interviewPlan.list", "Interview plans"),
+    "list_interview_stages": ("/interviewStage.list", "Interview stages"),
+    "get_interview_stage": ("/interviewStage.info", "Interview stage"),
+    "list_interview_stage_groups": ("/interviewStageGroup.list", "Interview stage groups"),
+    "list_application_feedback": ("/applicationFeedback.list", "Application feedback"),
 }
 
 
@@ -149,174 +156,248 @@ _CANDIDATE_COLS: Sequence[Column] = [
 ]
 
 _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
-    "list_candidates":      ("Candidates", _CANDIDATE_COLS),
-    "list_all_candidates":  ("All candidates", _CANDIDATE_COLS),
-    "search_candidates":    ("Candidate search results", _CANDIDATE_COLS),
-    "list_jobs": ("Jobs", [
-        ("id", "id"),
-        ("title", "title"),
-        ("status", "status"),
-        ("location", "locations.0.locationName"),
-        ("department", "department.name"),
-        ("updated", "updatedAt"),
-    ]),
-    "search_jobs": ("Job search results", [
-        ("id", "id"),
-        ("title", "title"),
-        ("status", "status"),
-        ("location", "locations.0.locationName"),
-    ]),
-    "list_applications": ("Applications", [
-        ("id", "id"),
-        ("candidate_id", "candidate.id"),
-        ("candidate", "candidate.name"),
-        # Candidate-derived firmware-scoring signals — surfacing these on the
-        # list view lets a heuristic skim N applications with no per-row
-        # `get_candidate` calls.
-        ("position", "candidate.position"),
-        ("company", "candidate.company"),
-        ("school", "candidate.school"),
-        ("linkedin", "candidate.linkedInUrl"),
-        ("job", "job.title"),
-        ("stage", "currentInterviewStage.title"),
-        ("status", "status"),
-        ("archive_reason", "archiveReason.title"),
-        ("source", "source.title"),
-        ("created", "createdAt"),
-    ]),
-    "list_projects": ("Projects", [
-        ("id", "id"),
-        ("title", "title"),
-        ("archived", "isArchived"),
-    ]),
-    "search_projects": ("Project search results", [
-        ("id", "id"),
-        ("title", "title"),
-        ("archived", "isArchived"),
-    ]),
-    "list_sources": ("Sources", [
-        ("id", "id"),
-        ("title", "title"),
-        ("type", "sourceType.title"),
-        ("archived", "isArchived"),
-    ]),
-    "list_candidate_tags": ("Candidate tags", [
-        ("id", "id"),
-        ("title", "title"),
-        ("archived", "isArchived"),
-    ]),
-    "list_custom_fields": ("Custom fields", [
-        ("id", "id"),
-        ("title", "title"),
-        ("type", "fieldType"),
-        ("object", "objectType"),
-        ("archived", "isArchived"),
-    ]),
-    "list_interviews": ("Interviews", [
-        ("id", "id"),
-        ("title", "title"),
-        ("type", "type"),
-        ("duration", "duration"),
-    ]),
-    "list_interview_plans": ("Interview plans", [
-        ("id", "id"),
-        ("title", "title"),
-        ("archived", "isArchived"),
-    ]),
-    "list_interview_stages": ("Interview stages", [
-        ("id", "id"),
-        ("title", "title"),
-        ("type", "type"),
-        ("order", "orderInInterviewPlan"),
-    ]),
-    "list_interview_stage_groups": ("Interview stage groups", [
-        ("id", "id"),
-        ("title", "title"),
-        ("order", "orderInInterviewPlan"),
-    ]),
-    "list_interview_schedules": ("Interview schedules", [
-        ("id", "id"),
-        ("applicationId", "applicationId"),
-        ("stage", "interviewStage.title"),
-        ("created", "createdAt"),
-    ]),
-    "list_interview_events": ("Interview events", [
-        ("id", "id"),
-        ("interview", "interview.title"),
-        ("start", "startTime"),
-        ("end", "endTime"),
-        ("status", "status"),
-    ]),
-    "list_candidate_notes": ("Candidate notes", [
-        ("id", "id"),
-        ("createdAt", "createdAt"),
-        ("author", "createdByUser.email"),
-        ("note", "note"),
-    ]),
+    "list_candidates": ("Candidates", _CANDIDATE_COLS),
+    "list_all_candidates": ("All candidates", _CANDIDATE_COLS),
+    "search_candidates": ("Candidate search results", _CANDIDATE_COLS),
+    "list_jobs": (
+        "Jobs",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("status", "status"),
+            ("location", "locations.0.locationName"),
+            ("department", "department.name"),
+            ("updated", "updatedAt"),
+        ],
+    ),
+    "search_jobs": (
+        "Job search results",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("status", "status"),
+            ("location", "locations.0.locationName"),
+        ],
+    ),
+    "list_applications": (
+        "Applications",
+        [
+            ("id", "id"),
+            ("candidate_id", "candidate.id"),
+            ("candidate", "candidate.name"),
+            # Candidate-derived firmware-scoring signals — surfacing these on the
+            # list view lets a heuristic skim N applications with no per-row
+            # `get_candidate` calls.
+            ("position", "candidate.position"),
+            ("company", "candidate.company"),
+            ("school", "candidate.school"),
+            ("linkedin", "candidate.linkedInUrl"),
+            ("job", "job.title"),
+            ("stage", "currentInterviewStage.title"),
+            ("status", "status"),
+            ("archive_reason", "archiveReason.title"),
+            ("source", "source.title"),
+            ("created", "createdAt"),
+        ],
+    ),
+    "list_projects": (
+        "Projects",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("archived", "isArchived"),
+        ],
+    ),
+    "search_projects": (
+        "Project search results",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("archived", "isArchived"),
+        ],
+    ),
+    "list_sources": (
+        "Sources",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("type", "sourceType.title"),
+            ("archived", "isArchived"),
+        ],
+    ),
+    "list_candidate_tags": (
+        "Candidate tags",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("archived", "isArchived"),
+        ],
+    ),
+    "list_custom_fields": (
+        "Custom fields",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("type", "fieldType"),
+            ("object", "objectType"),
+            ("archived", "isArchived"),
+        ],
+    ),
+    "list_interviews": (
+        "Interviews",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("type", "type"),
+            ("duration", "duration"),
+        ],
+    ),
+    "list_interview_plans": (
+        "Interview plans",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("archived", "isArchived"),
+        ],
+    ),
+    "list_interview_stages": (
+        "Interview stages",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("type", "type"),
+            ("order", "orderInInterviewPlan"),
+        ],
+    ),
+    "list_interview_stage_groups": (
+        "Interview stage groups",
+        [
+            ("id", "id"),
+            ("title", "title"),
+            ("order", "orderInInterviewPlan"),
+        ],
+    ),
+    "list_interview_schedules": (
+        "Interview schedules",
+        [
+            ("id", "id"),
+            ("applicationId", "applicationId"),
+            ("stage", "interviewStage.title"),
+            ("created", "createdAt"),
+        ],
+    ),
+    "list_interview_events": (
+        "Interview events",
+        [
+            ("id", "id"),
+            ("interview", "interview.title"),
+            ("start", "startTime"),
+            ("end", "endTime"),
+            ("status", "status"),
+        ],
+    ),
+    "list_candidate_notes": (
+        "Candidate notes",
+        [
+            ("id", "id"),
+            ("createdAt", "createdAt"),
+            ("author", "createdByUser.email"),
+            ("note", "note"),
+        ],
+    ),
 }
 
 _RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
-    "get_candidate": ("name", [
-        # Firmware-scoring signals first so a heuristic finds them at a glance.
-        ("position",    "position"),
-        ("company",     "company"),
-        ("school",      "school"),
-        ("linkedin",    "linkedInUrl"),
-        ("profile_url", "profileUrl"),
-        ("resume_id",   "resumeFileHandle.id"),
-        ("resume_name", "resumeFileHandle.name"),
-        ("email",       "primaryEmailAddress.value"),
-        ("phone",       "primaryPhoneNumber.value"),
-        ("source",      "source.title"),
-        ("credited to", "creditedToUser.email"),
-        ("location",    lambda r: ", ".join(
-            v for v in [
-                (r.get("location") or {}).get("city"),
-                (r.get("location") or {}).get("region"),
-                (r.get("location") or {}).get("country"),
-            ] if v
-        ) or "—"),
-        ("tags",        "tags"),
-        ("created",     "createdAt"),
-    ]),
-    "get_job": ("title", [
-        ("status",     "status"),
-        ("department", "department.name"),
-        ("location",   "locations.0.locationName"),
-        ("created",    "createdAt"),
-    ]),
-    "get_application": ("candidate.name", [
-        # Candidate-derived firmware-scoring signals — same as get_candidate.
-        ("position",    "candidate.position"),
-        ("company",     "candidate.company"),
-        ("school",      "candidate.school"),
-        ("linkedin",    "candidate.linkedInUrl"),
-        ("profile_url", "candidate.profileUrl"),
-        ("resume_id",   "candidate.resumeFileHandle.id"),
-        ("resume_name", "candidate.resumeFileHandle.name"),
-        ("job",         "job.title"),
-        ("stage",       "currentInterviewStage.title"),
-        ("status",      "status"),
-        ("source",      "source.title"),
-        ("created",     "createdAt"),
-    ]),
-    "get_project": ("title", [
-        ("archived", "isArchived"),
-        ("jobs",     "associatedJobIds"),
-    ]),
-    "get_custom_field": ("title", [
-        ("type",     "fieldType"),
-        ("object",   "objectType"),
-        ("archived", "isArchived"),
-    ]),
-    "get_interview_stage": ("title", [
-        ("type",  "type"),
-        ("order", "orderInInterviewPlan"),
-    ]),
-    "get_interview": ("title", [
-        ("type",     "type"),
-        ("duration", "duration"),
-    ]),
+    "get_candidate": (
+        "name",
+        [
+            # Firmware-scoring signals first so a heuristic finds them at a glance.
+            ("position", "position"),
+            ("company", "company"),
+            ("school", "school"),
+            ("linkedin", "linkedInUrl"),
+            ("profile_url", "profileUrl"),
+            ("resume_id", "resumeFileHandle.id"),
+            ("resume_name", "resumeFileHandle.name"),
+            ("email", "primaryEmailAddress.value"),
+            ("phone", "primaryPhoneNumber.value"),
+            ("source", "source.title"),
+            ("credited to", "creditedToUser.email"),
+            (
+                "location",
+                lambda r: (
+                    ", ".join(
+                        v
+                        for v in [
+                            (r.get("location") or {}).get("city"),
+                            (r.get("location") or {}).get("region"),
+                            (r.get("location") or {}).get("country"),
+                        ]
+                        if v
+                    )
+                    or "—"
+                ),
+            ),
+            ("tags", "tags"),
+            ("created", "createdAt"),
+        ],
+    ),
+    "get_job": (
+        "title",
+        [
+            ("status", "status"),
+            ("department", "department.name"),
+            ("location", "locations.0.locationName"),
+            ("created", "createdAt"),
+        ],
+    ),
+    "get_application": (
+        "candidate.name",
+        [
+            # Candidate-derived firmware-scoring signals — same as get_candidate.
+            ("position", "candidate.position"),
+            ("company", "candidate.company"),
+            ("school", "candidate.school"),
+            ("linkedin", "candidate.linkedInUrl"),
+            ("profile_url", "candidate.profileUrl"),
+            ("resume_id", "candidate.resumeFileHandle.id"),
+            ("resume_name", "candidate.resumeFileHandle.name"),
+            ("job", "job.title"),
+            ("stage", "currentInterviewStage.title"),
+            ("status", "status"),
+            ("source", "source.title"),
+            ("created", "createdAt"),
+        ],
+    ),
+    "get_project": (
+        "title",
+        [
+            ("archived", "isArchived"),
+            ("jobs", "associatedJobIds"),
+        ],
+    ),
+    "get_custom_field": (
+        "title",
+        [
+            ("type", "fieldType"),
+            ("object", "objectType"),
+            ("archived", "isArchived"),
+        ],
+    ),
+    "get_interview_stage": (
+        "title",
+        [
+            ("type", "type"),
+            ("order", "orderInInterviewPlan"),
+        ],
+    ),
+    "get_interview": (
+        "title",
+        [
+            ("type", "type"),
+            ("duration", "duration"),
+        ],
+    ),
 }
 
 
@@ -331,7 +412,11 @@ def _render(tool_name: str, payload: Any) -> str:
         title_acc, fields = fmt
         # Ashby wraps single-object responses as {success, results: {...}}.
         # Unwrap so the configured accessors see the record directly.
-        record = payload.get("results") if isinstance(payload, dict) and isinstance(payload.get("results"), dict) else payload
+        record = (
+            payload.get("results")
+            if isinstance(payload, dict) and isinstance(payload.get("results"), dict)
+            else payload
+        )
         return format_record(record, title_acc, fields)
     return format_json(payload)
 
@@ -406,7 +491,9 @@ async def _list_all_candidates(arguments: dict) -> list[types.TextContent]:
         if not page.get("moreDataAvailable") or not page.get("nextCursor"):
             break
         payload["cursor"] = page["nextCursor"]
-    return _text("list_all_candidates", "All candidates", {"results": all_results, "total": len(all_results)})
+    return _text(
+        "list_all_candidates", "All candidates", {"results": all_results, "total": len(all_results)}
+    )
 
 
 async def _list_sources(arguments: dict) -> list[types.TextContent]:
@@ -416,12 +503,12 @@ async def _list_sources(arguments: dict) -> list[types.TextContent]:
 
 
 _SPECIAL: dict[str, Callable[[dict], Awaitable[list[types.TextContent]]]] = {
-    "list_jobs":                _list_jobs,
-    "list_custom_fields":       _list_custom_fields,
-    "upload_candidate_resume":  _upload_candidate_resume,
-    "upload_candidate_file":    _upload_candidate_file,
-    "list_all_candidates":      _list_all_candidates,
-    "list_sources":             _list_sources,
+    "list_jobs": _list_jobs,
+    "list_custom_fields": _list_custom_fields,
+    "upload_candidate_resume": _upload_candidate_resume,
+    "upload_candidate_file": _upload_candidate_file,
+    "list_all_candidates": _list_all_candidates,
+    "list_sources": _list_sources,
 }
 
 

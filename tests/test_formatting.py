@@ -148,7 +148,9 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
     )
     text = await _call_raw("list_candidates", {"limit": 2})
     assert "## Candidates (2)" in text
-    assert "| id | name | position | company | school | linkedin | email | source | created |" in text
+    assert (
+        "| id | name | position | company | school | linkedin | email | source | created |" in text
+    )
     assert (
         "| c1 | Ada Lovelace | Engineer | Analytical Engines Ltd | Cambridge "
         "| https://linkedin.com/in/ada | ada@example.com | LinkedIn |"
@@ -166,8 +168,12 @@ async def test_list_sources_table_uses_source_type(httpx_mock, markdown_mode):
         json={
             "success": True,
             "results": [
-                {"id": "s1", "title": "LinkedIn", "isArchived": False,
-                 "sourceType": {"title": "Job Board"}},
+                {
+                    "id": "s1",
+                    "title": "LinkedIn",
+                    "isArchived": False,
+                    "sourceType": {"title": "Job Board"},
+                },
             ],
         },
     )

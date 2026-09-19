@@ -11,7 +11,8 @@ programmatic consumers).
 
 import json
 import os
-from typing import Any, Callable, Sequence, Union
+from collections.abc import Callable, Sequence
+from typing import Any, Union
 
 Accessor = Union[str, Callable[[Any], Any]]
 Column = tuple[str, Accessor]  # (header, accessor)
@@ -82,8 +83,7 @@ def table(rows: Sequence[Any], columns: Sequence[Column]) -> str:
     header = "| " + " | ".join(c[0] for c in columns) + " |"
     sep = "|" + "|".join(" --- " for _ in columns) + "|"
     body_lines = [
-        "| " + " | ".join(_cell(get_value(r, acc)) for _, acc in columns) + " |"
-        for r in rows
+        "| " + " | ".join(_cell(get_value(r, acc)) for _, acc in columns) + " |" for r in rows
     ]
     return "\n".join([header, sep, *body_lines])
 

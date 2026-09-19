@@ -116,7 +116,9 @@ def test_read_only_mode_hides_write_tools(monkeypatch):
         ("upload_candidate_file", {"candidateId": "c1", "file_path": "/etc/passwd"}),
     ],
 )
-async def test_read_only_mode_rejects_write_tools_in_dispatch(monkeypatch, httpx_mock, call_tool, name, args):
+async def test_read_only_mode_rejects_write_tools_in_dispatch(
+    monkeypatch, httpx_mock, call_tool, name, args
+):
     monkeypatch.setenv("ASHBY_READ_ONLY", "1")
     result = await call_tool(name, args)
     assert isinstance(result, str), result
@@ -126,7 +128,9 @@ async def test_read_only_mode_rejects_write_tools_in_dispatch(monkeypatch, httpx
 
 async def test_read_only_mode_still_serves_reads(monkeypatch, httpx_mock, call_tool):
     monkeypatch.setenv("ASHBY_READ_ONLY", "1")
-    httpx_mock.add_response(method="POST", url=f"{BASE}/job.list", json={"success": True, "results": []})
+    httpx_mock.add_response(
+        method="POST", url=f"{BASE}/job.list", json={"success": True, "results": []}
+    )
     assert await call_tool("list_jobs", {}) == {"success": True, "results": []}
 
 

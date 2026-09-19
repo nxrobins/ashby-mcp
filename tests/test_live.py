@@ -121,13 +121,15 @@ async def test_live_markdown_tables_show_real_values(monkeypatch, tool, args, re
     """Formatting contract: in the default markdown mode the columns the
     field maps read must be populated by the *current* API, not just by
     the checked-in openapi.json snapshot."""
-    from ashby.handlers import dispatch
+    from ashby.handlers import ToolError, dispatch
 
     monkeypatch.setenv("ASHBY_OUTPUT", "markdown")
-    text = (await dispatch(tool, args))[0].text
-    if text.startswith("Error executing") and "403" in text:
-        pytest.skip(f"{tool}: API key lacks permission ({text})")
-    assert not text.startswith("Error executing"), text
+    try:
+        text = (await dispatch(tool, args))[0].text
+    except ToolError as e:
+        if "403" in str(e):
+            pytest.skip(f"{tool}: API key lacks permission ({e})")
+        raise
     if "_(no results)_" in text:
         pytest.skip(f"{tool}: workspace returned no rows")
     header, rows = _table_rows(text)

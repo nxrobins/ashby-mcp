@@ -7,10 +7,14 @@ These tests pin the debuggability contract we want from the server:
   a clean error message rather than a crash.
 - Successful calls are logged at INFO level so operators can see
   activity; failures are logged at ERROR with enough context to debug.
+- At the MCP layer, a failure is a real error result (`isError: true`)
+  with the readable message as its content — not content that a client
+  or agent loop would take for a successful result.
 """
 
 import json
 import logging
+from contextlib import asynccontextmanager
 
 import pytest
 
@@ -122,3 +126,82 @@ async def test_failure_is_logged_with_detail(httpx_mock, call_tool, caplog):
     assert "400" in combined or "bad_input" in combined, (
         f"expected failure log to mention status or error body. Got: {combined!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# MCP layer — failures must arrive as `isError: true` results
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def _mcp_session():
+    """A real `ClientSession` connected to the ashby server over in-memory
+    streams — the same initialize/call_tool handshake a stdio or SSE client
+    performs, minus the transport.
+
+    A plain context manager rather than an async fixture: the anyio task
+    group inside must be entered and exited from the same task, which
+    pytest-asyncio does not guarantee for generator fixtures.
+    """
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    from ashby.server import server
+
+    async with create_connected_server_and_client_session(server) as client:
+        yield client
+
+
+async def test_mcp_unknown_tool_is_error_result():
+    """`dispatch` used to catch everything and return "Error executing …"
+    as ordinary content, so the CallToolResult said `isError: false` and
+    agent loops treated the failure as a success."""
+    async with _mcp_session() as client:
+        result = await client.call_tool("definitely_not_a_tool", {})
+    assert result.isError is True
+    assert "Unknown tool" in result.content[0].text
+
+
+async def test_mcp_http_4xx_is_error_result(httpx_mock):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.search",
+        status_code=403,
+        json={
+            "success": False,
+            "errors": ["forbidden"],
+            "errorInfo": {"message": "missing scope: candidates:read"},
+        },
+    )
+    async with _mcp_session() as client:
+        result = await client.call_tool("search_candidates", {"name": "Ada"})
+    assert result.isError is True
+    text = result.content[0].text
+    # The message stays human-readable so the model can recover from it.
+    assert "403" in text
+    assert "missing scope: candidates:read" in text
+
+
+async def test_mcp_success_false_envelope_is_error_result(httpx_mock):
+    """HTTP 200 + `success: false` is how Ashby reports validation and
+    permission errors; it must be an MCP error too, not a successful result."""
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.search",
+        status_code=200,
+        json={"success": False, "errors": ["invalid_input"]},
+    )
+    async with _mcp_session() as client:
+        result = await client.call_tool("search_candidates", {"name": ""})
+    assert result.isError is True
+    text = result.content[0].text
+    assert text.startswith("Ashby returned an error")
+    assert "invalid_input" in text
+
+
+async def test_mcp_success_is_not_error_result(httpx_mock):
+    """Control: a normal response still comes back with `isError: false`."""
+    _ok(httpx_mock, "/candidate.search")
+    async with _mcp_session() as client:
+        result = await client.call_tool("search_candidates", {"name": "Ada"})
+    assert result.isError is False
+    assert result.content[0].text.startswith("Search results: ")

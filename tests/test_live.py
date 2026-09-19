@@ -33,7 +33,9 @@ def _assert_ok_or_skip_on_403(result, tool_name: str) -> dict:
             pytest.skip(f"{tool_name}: API key lacks permission ({result})")
         if "5" in result and "Server Error" in result:
             pytest.skip(f"{tool_name}: transient upstream error ({result})")
-    assert isinstance(result, dict), f"{tool_name} returned unexpected type: {type(result)} ({result!r})"
+    assert isinstance(result, dict), (
+        f"{tool_name} returned unexpected type: {type(result)} ({result!r})"
+    )
     assert result.get("success") is True, f"{tool_name} returned {result}"
     return result
 
@@ -70,7 +72,9 @@ async def test_live_list_custom_fields_candidate_filter(call_tool):
 
 @pytest.mark.skipif(not _has_real_key(), reason=_skip_reason)
 async def test_live_list_candidate_tags(call_tool):
-    _assert_ok_or_skip_on_403(await call_tool("list_candidate_tags", {"limit": 5}), "list_candidate_tags")
+    _assert_ok_or_skip_on_403(
+        await call_tool("list_candidate_tags", {"limit": 5}), "list_candidate_tags"
+    )
 
 
 @pytest.mark.skipif(not _has_real_key(), reason=_skip_reason)
@@ -93,5 +97,7 @@ async def test_live_get_candidate_roundtrip(call_tool):
     if not results:
         pytest.skip("Workspace has no candidates to round-trip")
     candidate_id = results[0]["id"]
-    detail = _assert_ok_or_skip_on_403(await call_tool("get_candidate", {"id": candidate_id}), "get_candidate")
+    detail = _assert_ok_or_skip_on_403(
+        await call_tool("get_candidate", {"id": candidate_id}), "get_candidate"
+    )
     assert detail.get("results", {}).get("id") == candidate_id

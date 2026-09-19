@@ -5,13 +5,27 @@
 # Render auto-provisions the service with everything below. You fill in
 # ASHBY_API_KEY and MCP_BEARER_TOKEN in the Render UI when prompted
 # (both are marked `sync: false` so they're never committed to git).
+#
+# Dependencies are installed from uv.lock, not resolved fresh at build time.
+# The previous `pip install -e .` ignored the lock, so every deploy floated to
+# whatever mcp/starlette/uvicorn was newest that day while the test suite ran
+# against the locked versions — the `mcp<2` pin in pyproject.toml exists
+# because one such float broke the server at import. Now:
+#   - `uv sync --frozen --no-dev` installs exactly the locked versions (the
+#     same set CI tests and runs pip-audit against) and leaves the test
+#     tooling out of the image. uv reuses Render's existing `.venv`, so the
+#     `uv` binary that pip put there survives into the start command.
+#   - `uv run --no-sync ashby-mcp` starts the console script from that
+#     environment without re-resolving anything at boot.
+# To ship a dependency upgrade, run `uv lock --upgrade` locally, get CI green,
+# and merge — the lock is the only thing that moves what production runs.
 services:
   - type: web
     name: ashby-mcp
     runtime: python
     plan: free
-    buildCommand: pip install -e .
-    startCommand: ashby-mcp
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    startCommand: uv run --no-sync ashby-mcp
     healthCheckPath: /healthz
     envVars:
       - key: MCP_TRANSPORT

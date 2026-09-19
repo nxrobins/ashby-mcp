@@ -109,7 +109,9 @@ async def run_case(case: dict, model: str = DEFAULT_MODEL) -> CaseResult:
             u = getattr(response, "usage", None)
             if u is not None:
                 result.usage["input_tokens"] = result.usage.get("input_tokens", 0) + u.input_tokens
-                result.usage["output_tokens"] = result.usage.get("output_tokens", 0) + u.output_tokens
+                result.usage["output_tokens"] = (
+                    result.usage.get("output_tokens", 0) + u.output_tokens
+                )
 
             if response.stop_reason == "end_turn":
                 result.final_text = _first_text(response.content)
@@ -137,10 +139,14 @@ async def run_case(case: dict, model: str = DEFAULT_MODEL) -> CaseResult:
                     # would in production, not as a successful result.
                     text, is_error = str(e), True
                 result.tool_calls.append(
-                    ToolCall(name=block.name, input=dict(block.input), output=text, is_error=is_error)
+                    ToolCall(
+                        name=block.name, input=dict(block.input), output=text, is_error=is_error
+                    )
                 )
                 tool_result: dict[str, Any] = {
-                    "type": "tool_result", "tool_use_id": block.id, "content": text,
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": text,
                 }
                 if is_error:
                     tool_result["is_error"] = True

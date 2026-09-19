@@ -113,9 +113,24 @@ Quick tunnels buffer small SSE chunks, which breaks the MCP handshake (the initi
 uv sync --group dev
 uv run pytest                 # unit tests (mocked HTTP, no network)
 uv run pytest -m live         # live smoke tests (requires ASHBY_API_KEY)
+uv run ruff check             # lint
+uv run ruff format --check    # formatting (drop --check to apply)
 ```
 
 Unit tests cover every tool's routing and request shape. Live tests hit only read-only endpoints (`list_*`, `get_*`, `search_*`) so they can't corrupt workspace data; they exist to catch contract drift.
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same lint, format and test steps on every push to `main` and every pull request, checks that `uv.lock` is in sync with `pyproject.toml`, and runs `pip-audit` against the locked dependency set.
+
+### Dependencies
+
+`uv.lock` is the source of truth for what runs everywhere: the test suite, CI, and the Render deployment (`render.yaml` installs with `uv sync --frozen`). To pick up new upstream releases:
+
+```bash
+uv lock --upgrade             # re-resolve within the constraints in pyproject.toml
+uv sync --group dev && uv run pytest
+```
+
+Commit the updated `uv.lock` with the change; CI's `pip-audit` step will flag any pinned version with a published advisory.
 
 ### Project layout
 

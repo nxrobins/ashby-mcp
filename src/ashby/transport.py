@@ -32,12 +32,12 @@ async def run_http(server: Server, host: str, port: int) -> None:
     `Authorization: Bearer <token>`. If unset, the server runs open —
     only do that for local testing.
     """
+    import uvicorn
     from mcp.server.sse import SseServerTransport
     from starlette.applications import Starlette
     from starlette.requests import Request
     from starlette.responses import JSONResponse, Response
     from starlette.routing import Mount, Route
-    import uvicorn
 
     sse = SseServerTransport("/messages/")
     expected_token = os.getenv("MCP_BEARER_TOKEN")
@@ -57,9 +57,10 @@ async def run_http(server: Server, host: str, port: int) -> None:
         if (err := _check_auth(request)) is not None:
             return err
         # connect_sse owns the response lifecycle.
-        async with sse.connect_sse(
-            request.scope, request.receive, request._send
-        ) as (read_stream, write_stream):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as (
+            read_stream,
+            write_stream,
+        ):
             await server.run(read_stream, write_stream, _init_options(server))
         return Response()
 
@@ -68,8 +69,13 @@ async def run_http(server: Server, host: str, port: int) -> None:
         if expected_token:
             headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
             if headers.get("authorization", "") != f"Bearer {expected_token}":
-                await send({"type": "http.response.start", "status": 401,
-                            "headers": [(b"content-type", b"application/json")]})
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [(b"content-type", b"application/json")],
+                    }
+                )
                 await send({"type": "http.response.body", "body": b'{"error":"unauthorized"}'})
                 return
         await sse.handle_post_message(scope, receive, send)

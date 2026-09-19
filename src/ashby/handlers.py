@@ -20,11 +20,20 @@ import mcp.types as types
 
 from .client import ashby_client
 from .formatting import (
+    FULL_TEXT,
+    WIDE,
     Column,
+    count_of,
+    custom_fields,
+    fmt,
     format_json,
     format_list,
     format_record,
+    items_of,
     output_format,
+    select_options,
+    social_link,
+    titles_of,
 )
 
 logger = logging.getLogger("ashby.handlers")
@@ -60,7 +69,6 @@ _SIMPLE: dict[str, tuple[str, str]] = {
     # Jobs
     "create_job":                 ("/job.create",                 "Created job"),
     "search_jobs":                ("/job.search",                 "Job search results"),
-    "get_job":                    ("/job.info",                   "Job"),
     "update_job":                 ("/job.update",                 "Job updated"),
     "set_job_status":             ("/job.setStatus",              "Job status set"),
     # Applications
@@ -94,6 +102,12 @@ _SIMPLE: dict[str, tuple[str, str]] = {
 # verbose Ashby JSON into compact markdown tables (for lists) or labeled
 # sections (for single records). Tools without a map fall back to JSON.
 # Set ASHBY_OUTPUT=json to disable formatting entirely.
+#
+# Every accessor below names a field from the endpoint's 200-response
+# schema in openapi.json — `tests/test_spec_alignment.py` fails if one
+# doesn't resolve, so a typo or an invented field can't silently render
+# as `—`. Callable accessors come from formatting.py factories that
+# declare the paths they read (see `Derived`).
 # ---------------------------------------------------------------------------
 
 _CANDIDATE_COLS: Sequence[Column] = [
@@ -102,58 +116,81 @@ _CANDIDATE_COLS: Sequence[Column] = [
     ("position", "position"),
     ("company", "company"),
     ("school", "school"),
-    ("linkedin", "linkedInUrl"),
+    # Candidate has no `linkedInUrl`; links live in `socialLinks: [{type, url}]`.
+    ("linkedin", social_link("LinkedIn")),
     ("email", "primaryEmailAddress.value"),
+    ("location", "primaryLocation.locationSummary"),
     ("source", "source.title"),
     ("created", "createdAt"),
+]
+
+_JOB_COLS: Sequence[Column] = [
+    ("id", "id"),
+    ("title", "title"),
+    ("status", "status"),
+    # Job carries only `locationId` / `departmentId`. `location` is the
+    # expanded object (`expand: ["location"]`, which list_jobs / get_job
+    # request by default); there is no department expansion in the API.
+    ("location", "location.name"),
+    ("location_id", "locationId"),
+    ("department_id", "departmentId"),
+    ("employment", "employmentType"),
+    ("openings", items_of("openings", "{id} ({openingState})")),
+    ("updated", "updatedAt"),
+]
+
+_PROJECT_COLS: Sequence[Column] = [
+    ("id", "id"),
+    ("title", "title"),
+    ("description", "description"),
+    ("archived", "isArchived"),
+    ("confidential", "confidential"),
+]
+
+_CUSTOM_FIELD_COLS: Sequence[Column] = [
+    ("id", "id"),
+    ("title", "title"),
+    ("type", "fieldType"),
+    ("object", "objectType"),
+    ("archived", "isArchived"),
+    # Allowed values for ValueSelect / MultiValueSelect — needed by
+    # set_custom_field_value, so give the column a generous budget.
+    ("values", select_options(), WIDE),
 ]
 
 _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
     "list_candidates":      ("Candidates", _CANDIDATE_COLS),
     "list_all_candidates":  ("All candidates", _CANDIDATE_COLS),
     "search_candidates":    ("Candidate search results", _CANDIDATE_COLS),
-    "list_jobs": ("Jobs", [
-        ("id", "id"),
-        ("title", "title"),
-        ("status", "status"),
-        ("location", "locations.0.locationName"),
-        ("department", "department.name"),
-        ("updated", "updatedAt"),
-    ]),
+    "list_jobs":            ("Jobs", _JOB_COLS),
     "search_jobs": ("Job search results", [
+        # job.search has no `expand`, so no location name — ids only.
         ("id", "id"),
         ("title", "title"),
         ("status", "status"),
-        ("location", "locations.0.locationName"),
+        ("location_id", "locationId"),
+        ("department_id", "departmentId"),
+        ("employment", "employmentType"),
     ]),
     "list_applications": ("Applications", [
         ("id", "id"),
         ("candidate_id", "candidate.id"),
         ("candidate", "candidate.name"),
-        # Candidate-derived firmware-scoring signals — surfacing these on the
-        # list view lets a heuristic skim N applications with no per-row
-        # `get_candidate` calls.
-        ("position", "candidate.position"),
-        ("company", "candidate.company"),
-        ("school", "candidate.school"),
-        ("linkedin", "candidate.linkedInUrl"),
+        # Application.candidate is a summary ({id, name, primaryEmailAddress,
+        # primaryPhoneNumber}); position/company/school/links need get_candidate.
+        ("email", "candidate.primaryEmailAddress.value"),
         ("job", "job.title"),
+        ("job_id", "job.id"),
         ("stage", "currentInterviewStage.title"),
         ("status", "status"),
-        ("archive_reason", "archiveReason.title"),
+        ("archive_reason", "archiveReason.text"),
+        ("archived_at", "archivedAt"),
         ("source", "source.title"),
         ("created", "createdAt"),
+        ("openings", items_of("openings", "{id} ({openingState})")),  # expand: ["openings"]
     ]),
-    "list_projects": ("Projects", [
-        ("id", "id"),
-        ("title", "title"),
-        ("archived", "isArchived"),
-    ]),
-    "search_projects": ("Project search results", [
-        ("id", "id"),
-        ("title", "title"),
-        ("archived", "isArchived"),
-    ]),
+    "list_projects":   ("Projects", _PROJECT_COLS),
+    "search_projects": ("Project search results", _PROJECT_COLS),
     "list_sources": ("Sources", [
         ("id", "id"),
         ("title", "title"),
@@ -165,18 +202,13 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
         ("title", "title"),
         ("archived", "isArchived"),
     ]),
-    "list_custom_fields": ("Custom fields", [
-        ("id", "id"),
-        ("title", "title"),
-        ("type", "fieldType"),
-        ("object", "objectType"),
-        ("archived", "isArchived"),
-    ]),
+    "list_custom_fields": ("Custom fields", _CUSTOM_FIELD_COLS),
     "list_interviews": ("Interviews", [
         ("id", "id"),
         ("title", "title"),
-        ("type", "type"),
-        ("duration", "duration"),
+        ("archived", "isArchived"),
+        ("debrief", "isDebrief"),
+        ("job_id", "jobId"),
     ]),
     "list_interview_plans": ("Interview plans", [
         ("id", "id"),
@@ -188,95 +220,142 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
         ("title", "title"),
         ("type", "type"),
         ("order", "orderInInterviewPlan"),
+        ("group_id", "interviewStageGroupId"),
     ]),
     "list_interview_stage_groups": ("Interview stage groups", [
         ("id", "id"),
         ("title", "title"),
-        ("order", "orderInInterviewPlan"),
+        ("order", "order"),
+        ("stage_type", "stageType"),
     ]),
     "list_interview_schedules": ("Interview schedules", [
         ("id", "id"),
         ("applicationId", "applicationId"),
-        ("stage", "interviewStage.title"),
-        ("created", "createdAt"),
+        ("stage_id", "interviewStageId"),
+        ("status", "status"),
+        ("events", count_of("interviewEvents")),
+        ("first_start", "interviewEvents.0.startTime"),
     ]),
     "list_interview_events": ("Interview events", [
         ("id", "id"),
-        ("interview", "interview.title"),
+        ("interview", "interview.title"),  # expand: ["interview"]
+        ("interview_id", "interviewId"),
         ("start", "startTime"),
         ("end", "endTime"),
-        ("status", "status"),
+        ("interviewers", "interviewerUserIds"),
+        ("feedback_submitted", "hasSubmittedFeedback"),
+        ("meeting_link", "meetingLink"),
+        ("location", "location"),
     ]),
     "list_candidate_notes": ("Candidate notes", [
         ("id", "id"),
         ("createdAt", "createdAt"),
-        ("author", "createdByUser.email"),
-        ("note", "note"),
+        ("author", "author.email"),
+        ("author_name", fmt("{author.firstName} {author.lastName}")),
+        # Notes are the point of this list — don't truncate them to 60 chars.
+        ("note", "content", FULL_TEXT),
     ]),
 }
 
 _RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
     "get_candidate": ("name", [
-        # Firmware-scoring signals first so a heuristic finds them at a glance.
-        ("position",    "position"),
-        ("company",     "company"),
-        ("school",      "school"),
-        ("linkedin",    "linkedInUrl"),
-        ("profile_url", "profileUrl"),
-        ("resume_id",   "resumeFileHandle.id"),
-        ("resume_name", "resumeFileHandle.name"),
-        ("email",       "primaryEmailAddress.value"),
-        ("phone",       "primaryPhoneNumber.value"),
-        ("source",      "source.title"),
-        ("credited to", "creditedToUser.email"),
-        ("location",    lambda r: ", ".join(
-            v for v in [
-                (r.get("location") or {}).get("city"),
-                (r.get("location") or {}).get("region"),
-                (r.get("location") or {}).get("country"),
-            ] if v
-        ) or "—"),
-        ("tags",        "tags"),
-        ("created",     "createdAt"),
+        # Scoring signals first so a heuristic finds them at a glance.
+        ("position",     "position"),
+        ("company",      "company"),
+        ("school",       "school"),
+        ("linkedin",     social_link("LinkedIn")),
+        ("links",        items_of("socialLinks", "{type}: {url}")),
+        ("profile_url",  "profileUrl"),
+        ("resume_id",    "resumeFileHandle.id"),
+        ("resume_name",  "resumeFileHandle.name"),
+        ("email",        "primaryEmailAddress.value"),
+        ("emails",       items_of("emailAddresses", "{value} ({type})")),
+        ("phone",        "primaryPhoneNumber.value"),
+        ("phones",       items_of("phoneNumbers", "{value} ({type})")),
+        ("location",     "primaryLocation.locationSummary"),
+        ("timezone",     "timezone"),
+        ("source",       "source.title"),
+        ("credited_to",  "creditedToUser.email"),
+        ("tags",         titles_of("tags")),
+        ("applications", "applicationIds"),
+        ("custom_fields", custom_fields()),
+        ("files",        items_of("fileHandles", "{name} ({id})")),
+        ("created",      "createdAt"),
+        ("updated",      "updatedAt"),
     ]),
     "get_job": ("title", [
-        ("status",     "status"),
-        ("department", "department.name"),
-        ("location",   "locations.0.locationName"),
-        ("created",    "createdAt"),
+        ("status",         "status"),
+        ("location",       "location.name"),  # expand: ["location"] (default)
+        ("location_id",    "locationId"),
+        ("department_id",  "departmentId"),
+        ("employment",     "employmentType"),
+        ("confidential",   "confidential"),
+        ("interview_plan", "defaultInterviewPlanId"),
+        ("hiring_team",    items_of("hiringTeam", "{firstName} {lastName} ({role})")),
+        ("openings",       items_of("openings", "{id} {latestVersion.identifier} ({openingState})")),
+        ("custom_fields",  custom_fields()),
+        ("created",        "createdAt"),
+        ("opened",         "openedAt"),
+        ("closed",         "closedAt"),
+        ("updated",        "updatedAt"),
     ]),
     "get_application": ("candidate.name", [
-        # Candidate-derived firmware-scoring signals — same as get_candidate.
-        ("position",    "candidate.position"),
-        ("company",     "candidate.company"),
-        ("school",      "candidate.school"),
-        ("linkedin",    "candidate.linkedInUrl"),
-        ("profile_url", "candidate.profileUrl"),
-        ("resume_id",   "candidate.resumeFileHandle.id"),
-        ("resume_name", "candidate.resumeFileHandle.name"),
-        ("job",         "job.title"),
-        ("stage",       "currentInterviewStage.title"),
-        ("status",      "status"),
-        ("source",      "source.title"),
-        ("created",     "createdAt"),
+        ("candidate_id",   "candidate.id"),
+        ("email",          "candidate.primaryEmailAddress.value"),
+        ("phone",          "candidate.primaryPhoneNumber.value"),
+        ("job",            "job.title"),
+        ("job_id",         "job.id"),
+        ("stage",          "currentInterviewStage.title"),
+        ("stage_id",       "currentInterviewStage.id"),
+        ("status",         "status"),
+        ("archive_reason", "archiveReason.text"),
+        ("archived_at",    "archivedAt"),
+        ("source",         "source.title"),
+        ("credited_to",    "creditedToUser.email"),
+        ("hiring_team",    items_of("hiringTeam", "{firstName} {lastName} ({role})")),
+        ("custom_fields",  custom_fields()),
+        ("history",        items_of("applicationHistory", "{title} @ {enteredStageAt}")),
+        # expand: ["openings", "referrals"]. `applicationFormSubmissions` is
+        # free-form, so it is left to the raw-JSON tail rather than flattened.
+        ("openings",       items_of("openings", "{id} ({openingState})")),
+        ("referrals",      items_of("referrals", "{user.firstName} {user.lastName} ({user.email}) @ {referredAt}")),
+        ("created",        "createdAt"),
+        ("updated",        "updatedAt"),
     ]),
     "get_project": ("title", [
-        ("archived", "isArchived"),
-        ("jobs",     "associatedJobIds"),
+        ("description",  "description"),
+        ("archived",     "isArchived"),
+        ("confidential", "confidential"),
+        ("author_id",    "authorId"),
+        ("custom_fields", custom_fields("customFieldEntries")),
+        ("created",      "createdAt"),
     ]),
     "get_custom_field": ("title", [
         ("type",     "fieldType"),
         ("object",   "objectType"),
         ("archived", "isArchived"),
+        ("private",  "isPrivate"),
+        ("values",   select_options()),
     ]),
     "get_interview_stage": ("title", [
-        ("type",  "type"),
-        ("order", "orderInInterviewPlan"),
+        ("type",     "type"),
+        ("order",    "orderInInterviewPlan"),
+        ("group_id", "interviewStageGroupId"),
+        ("plan_id",  "interviewPlanId"),
     ]),
     "get_interview": ("title", [
-        ("type",     "type"),
-        ("duration", "duration"),
+        ("archived",         "isArchived"),
+        ("debrief",          "isDebrief"),
+        ("job_id",           "jobId"),
+        ("feedback_form_id", "feedbackFormDefinitionId"),
+        ("instructions",     "instructionsPlain"),
     ]),
+}
+
+# Record keys deliberately left out of the raw-JSON tail (duplicates of a
+# field already rendered in another form).
+_RECORD_OMIT: dict[str, Sequence[str]] = {
+    "get_interview": ("instructionsHtml",),
 }
 
 
@@ -284,15 +363,15 @@ def _render(tool_name: str, payload: Any) -> str:
     """Render an Ashby response for LLM consumption (markdown or JSON)."""
     if output_format() == "json":
         return format_json(payload)
-    if fmt := _LIST_FORMATS.get(tool_name):
-        title, columns = fmt
+    if spec := _LIST_FORMATS.get(tool_name):
+        title, columns = spec
         return format_list(payload, title, columns)
-    if fmt := _RECORD_FORMATS.get(tool_name):
-        title_acc, fields = fmt
+    if spec := _RECORD_FORMATS.get(tool_name):
+        title_acc, fields = spec
         # Ashby wraps single-object responses as {success, results: {...}}.
         # Unwrap so the configured accessors see the record directly.
         record = payload.get("results") if isinstance(payload, dict) and isinstance(payload.get("results"), dict) else payload
-        return format_record(record, title_acc, fields)
+        return format_record(record, title_acc, fields, omit=_RECORD_OMIT.get(tool_name, ()))
     return format_json(payload)
 
 
@@ -306,11 +385,22 @@ def _text(tool_name: str, prefix: str, payload: Any) -> list[types.TextContent]:
 
 
 async def _list_jobs(arguments: dict) -> list[types.TextContent]:
-    """Defaults status filter to Open when the caller omits it."""
+    """Defaults status filter to Open and expands `location` when the
+    caller omits them. A Job only carries `locationId`; the expansion is
+    what lets the table show a location *name*."""
     payload = dict(arguments) if arguments else {}
     payload.setdefault("status", ["Open"])
+    payload.setdefault("expand", ["location"])
     response = await ashby_client._make_request("/job.list", method="POST", data=payload)
     return _text("list_jobs", "Job list", response)
+
+
+async def _get_job(arguments: dict) -> list[types.TextContent]:
+    """Expands `location` unless the caller chose their own `expand`."""
+    payload = dict(arguments) if arguments else {}
+    payload.setdefault("expand", ["location"])
+    response = await ashby_client._make_request("/job.info", method="POST", data=payload)
+    return _text("get_job", "Job", response)
 
 
 async def _list_custom_fields(arguments: dict) -> list[types.TextContent]:
@@ -370,6 +460,7 @@ async def _list_sources(arguments: dict) -> list[types.TextContent]:
 
 _SPECIAL: dict[str, Callable[[dict], Awaitable[list[types.TextContent]]]] = {
     "list_jobs":                _list_jobs,
+    "get_job":                  _get_job,
     "list_custom_fields":       _list_custom_fields,
     "upload_candidate_resume":  _upload_candidate_resume,
     "upload_candidate_file":    _upload_candidate_file,

@@ -1,10 +1,18 @@
 """Synthetic Ashby workspace for eval runs.
 
 A small but believable company: 6 jobs across Eng/Sales/Design/Product,
-15 candidates with varied histories, ~30 applications distributed
+17 candidates with varied histories, ~18 applications distributed
 across open + closed searches with realistic stage and archive-reason
 distributions. Notes attached to the candidates most interesting for
 re-engagement and outreach cases.
+
+Every object here follows the response shapes in `openapi.json` (the
+checked-in Ashby spec) — e.g. `archiveReason.text` not `.title`, notes
+carry `content` + `author`, jobs carry `locationId` / `departmentId`,
+candidates carry `socialLinks` / `primaryLocation` / object `tags`, and
+an application's `candidate` is the `{id, name, primaryEmailAddress,
+primaryPhoneNumber}` summary. If the fake mirrors an invented shape, the
+formatters render `—` in production while evals still pass.
 
 All timestamps are relative to `TODAY` so the data stays interpretable
 ("last 18 months", "recent archive", etc.) regardless of when evals run.
@@ -22,7 +30,7 @@ def _iso(days_ago: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Lookup tables (sources, archive reasons, interview stages)
+# Lookup tables (sources, archive reasons, locations, interview stages, users)
 # ---------------------------------------------------------------------------
 
 SOURCES = [
@@ -36,68 +44,77 @@ SOURCES = [
      "sourceType": {"id": "st_agency", "title": "Agency", "isArchived": False}},
 ]
 
+# Shape: /archiveReason.list results and Application.archiveReason.
 ARCHIVE_REASONS = [
-    {"id": "ar_timing",        "title": "Timing (not right now)"},
-    {"id": "ar_comp",          "title": "Compensation misalignment"},
-    {"id": "ar_location",      "title": "Location mismatch"},
-    {"id": "ar_performance",   "title": "Failed bar (performance)"},
-    {"id": "ar_nli",           "title": "No longer interested"},
-    {"id": "ar_offer_declined","title": "Offer declined"},
-    {"id": "ar_role_scope",    "title": "Role-scope mismatch"},
+    {"id": "ar_timing",         "text": "Timing (not right now)",     "reasonType": "RejectedByCandidate", "isArchived": False},
+    {"id": "ar_comp",           "text": "Compensation misalignment",  "reasonType": "RejectedByCandidate", "isArchived": False},
+    {"id": "ar_location",       "text": "Location mismatch",          "reasonType": "Other",               "isArchived": False},
+    {"id": "ar_performance",    "text": "Failed bar (performance)",   "reasonType": "RejectedByOrg",       "isArchived": False},
+    {"id": "ar_nli",            "text": "No longer interested",       "reasonType": "RejectedByCandidate", "isArchived": False},
+    {"id": "ar_offer_declined", "text": "Offer declined",             "reasonType": "RejectedByCandidate", "isArchived": False},
+    {"id": "ar_role_scope",     "text": "Role-scope mismatch",        "reasonType": "RejectedByOrg",       "isArchived": False},
 ]
 
-INTERVIEW_STAGES = [
-    {"id": "is_lead",    "title": "Lead",         "type": "PreInterviewScreen", "orderInInterviewPlan": 0},
-    {"id": "is_screen",  "title": "Recruiter Screen","type": "Active",         "orderInInterviewPlan": 1},
-    {"id": "is_tech",    "title": "Technical Screen","type": "Active",         "orderInInterviewPlan": 2},
-    {"id": "is_onsite",  "title": "Onsite",       "type": "Active",            "orderInInterviewPlan": 3},
-    {"id": "is_offer",   "title": "Offer",        "type": "Offer",             "orderInInterviewPlan": 4},
-    {"id": "is_hired",   "title": "Hired",        "type": "Hired",             "orderInInterviewPlan": 5},
-    {"id": "is_archived","title": "Archived",     "type": "Archived",          "orderInInterviewPlan": 99},
+# Shape: Location (what `expand: ["location"]` attaches to a Job).
+LOCATIONS = [
+    {"id": "loc_sf",     "name": "San Francisco", "isArchived": False, "isRemote": False, "workplaceType": "Hybrid", "type": "Location"},
+    {"id": "loc_nyc",    "name": "New York",      "isArchived": False, "isRemote": False, "workplaceType": "OnSite", "type": "Location"},
+    {"id": "loc_remote", "name": "Remote",        "isArchived": False, "isRemote": True,  "workplaceType": "Remote", "type": "Location"},
 ]
+
+INTERVIEW_PLAN_ID = "ip_default"
+
+# Shape: InterviewStage (list/info) — `orderInInterviewPlan` is the real field here.
+INTERVIEW_STAGES = [
+    {"id": "is_lead",     "title": "Lead",             "type": "Lead",               "orderInInterviewPlan": 0,  "interviewPlanId": INTERVIEW_PLAN_ID},
+    {"id": "is_screen",   "title": "Recruiter Screen", "type": "PreInterviewScreen", "orderInInterviewPlan": 1,  "interviewPlanId": INTERVIEW_PLAN_ID},
+    {"id": "is_tech",     "title": "Technical Screen", "type": "Active",             "orderInInterviewPlan": 2,  "interviewPlanId": INTERVIEW_PLAN_ID},
+    {"id": "is_onsite",   "title": "Onsite",           "type": "Active",             "orderInInterviewPlan": 3,  "interviewPlanId": INTERVIEW_PLAN_ID},
+    {"id": "is_offer",    "title": "Offer",            "type": "Offer",              "orderInInterviewPlan": 4,  "interviewPlanId": INTERVIEW_PLAN_ID},
+    {"id": "is_hired",    "title": "Hired",            "type": "Hired",              "orderInInterviewPlan": 5,  "interviewPlanId": INTERVIEW_PLAN_ID},
+    {"id": "is_archived", "title": "Archived",         "type": "Archived",           "orderInInterviewPlan": 99, "interviewPlanId": INTERVIEW_PLAN_ID},
+]
+
+# Shape: CandidateNote.author (`{id, firstName, lastName, email}`).
+USERS = {
+    "hm@example.com":  {"id": "u_hm",  "firstName": "Hana", "lastName": "Moreno", "email": "hm@example.com"},
+    "rec@example.com": {"id": "u_rec", "firstName": "Rae",  "lastName": "Cole",   "email": "rec@example.com"},
+}
 
 
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
 
+def _job(jid: str, title: str, status: str, location_id: str, department_id: str,
+         created_days_ago: int, updated_days_ago: int) -> dict:
+    """Shape: Job as returned by /job.list, /job.info, /job.search.
+
+    Only ids for location / department — the API has no department
+    expansion, and the location object is attached by the fake server
+    when `expand: ["location"]` is requested (see fake_server.py).
+    """
+    job = {
+        "id": jid, "title": title, "confidential": False, "status": status,
+        "employmentType": "FullTime",
+        "locationId": location_id, "departmentId": department_id,
+        "defaultInterviewPlanId": INTERVIEW_PLAN_ID, "interviewPlanIds": [INTERVIEW_PLAN_ID],
+        "customFields": [], "jobPostingIds": [], "hiringTeam": [],
+        "createdAt": _iso(created_days_ago), "updatedAt": _iso(updated_days_ago),
+        "openedAt": _iso(created_days_ago),
+    }
+    if status == "Closed":
+        job["closedAt"] = _iso(updated_days_ago)
+    return job
+
+
 JOBS = [
-    {
-        "id": "j_eng_senior", "title": "Senior Software Engineer",
-        "status": "Open", "department": {"id": "d_eng", "name": "Engineering"},
-        "locations": [{"locationName": "San Francisco"}],
-        "createdAt": _iso(180), "updatedAt": _iso(10),
-    },
-    {
-        "id": "j_eng_staff", "title": "Staff Software Engineer",
-        "status": "Open", "department": {"id": "d_eng", "name": "Engineering"},
-        "locations": [{"locationName": "Remote"}],
-        "createdAt": _iso(90), "updatedAt": _iso(5),
-    },
-    {
-        "id": "j_sales_ae_closed", "title": "Account Executive",
-        "status": "Closed", "department": {"id": "d_sales", "name": "Sales"},
-        "locations": [{"locationName": "New York"}],
-        "createdAt": _iso(540), "updatedAt": _iso(320),
-    },
-    {
-        "id": "j_sales_ae_open", "title": "Senior Account Executive",
-        "status": "Open", "department": {"id": "d_sales", "name": "Sales"},
-        "locations": [{"locationName": "New York"}],
-        "createdAt": _iso(60), "updatedAt": _iso(3),
-    },
-    {
-        "id": "j_design_lead", "title": "Design Lead",
-        "status": "Closed", "department": {"id": "d_design", "name": "Design"},
-        "locations": [{"locationName": "San Francisco"}],
-        "createdAt": _iso(420), "updatedAt": _iso(220),
-    },
-    {
-        "id": "j_product_hod", "title": "Head of Product",
-        "status": "Closed", "department": {"id": "d_product", "name": "Product"},
-        "locations": [{"locationName": "San Francisco"}],
-        "createdAt": _iso(360), "updatedAt": _iso(150),
-    },
+    _job("j_eng_senior",      "Senior Software Engineer", "Open",   "loc_sf",     "d_eng",     180, 10),
+    _job("j_eng_staff",       "Staff Software Engineer",  "Open",   "loc_remote", "d_eng",     90,  5),
+    _job("j_sales_ae_closed", "Account Executive",        "Closed", "loc_nyc",    "d_sales",   540, 320),
+    _job("j_sales_ae_open",   "Senior Account Executive", "Open",   "loc_nyc",    "d_sales",   60,  3),
+    _job("j_design_lead",     "Design Lead",              "Closed", "loc_sf",     "d_design",  420, 220),
+    _job("j_product_hod",     "Head of Product",          "Closed", "loc_sf",     "d_product", 360, 150),
 ]
 
 
@@ -106,47 +123,68 @@ JOBS = [
 # ---------------------------------------------------------------------------
 
 def _cand(cid: str, name: str, email: str, source_id: str, created_days_ago: int,
-          location: str = "San Francisco, US", tags: list[str] | None = None) -> dict:
+          location: str = "San Francisco, US", tags: list[str] | None = None,
+          position: str | None = None, company: str | None = None,
+          school: str | None = None) -> dict:
+    """Shape: Candidate as returned by /candidate.list, /candidate.info,
+    /candidate.search. `applicationIds` is filled in once APPLICATIONS exist."""
     source = next(s for s in SOURCES if s["id"] == source_id)
-    return {
+    city, _, country = (p.strip() for p in location.partition(","))
+    primary_email = {"value": email, "type": "Personal", "isPrimary": True}
+    primary_phone = {"value": "+1-555-0100", "type": "Personal", "isPrimary": True}
+    cand = {
         "id": cid, "name": name,
-        "primaryEmailAddress": {"value": email, "type": "personal", "isPrimary": True},
-        "primaryPhoneNumber": {"value": "+1-555-0100", "type": "Mobile", "isPrimary": True},
-        "source": {"id": source["id"], "title": source["title"]},
-        "location": {"city": location.split(",")[0].strip(),
-                     "region": "", "country": location.split(",")[-1].strip()},
-        "linkedInUrl": f"https://linkedin.com/in/{cid}",
-        "tags": tags or [],
         "createdAt": _iso(created_days_ago),
         "updatedAt": _iso(max(0, created_days_ago - 5)),
+        "primaryEmailAddress": primary_email,
+        "emailAddresses": [primary_email],
+        "primaryPhoneNumber": primary_phone,
+        "phoneNumbers": [primary_phone],
+        "socialLinks": [{"type": "LinkedIn", "url": f"https://linkedin.com/in/{cid}"}],
+        "tags": [{"id": f"tag_{t.lower().replace(' ', '_')}", "title": t, "isArchived": False}
+                 for t in (tags or [])],
+        "applicationIds": [],
+        "fileHandles": [],
+        "customFields": [],
+        "profileUrl": f"https://app.ashbyhq.com/candidates/{cid}",
+        "source": {"id": source["id"], "title": source["title"], "isArchived": False},
+        "primaryLocation": {
+            "id": f"pl_{cid}",
+            "locationSummary": location,
+            "locationComponents": [{"type": "City", "name": city}, {"type": "Country", "name": country}],
+        },
     }
+    for key, value in (("position", position), ("company", company), ("school", school)):
+        if value:
+            cand[key] = value
+    return cand
 
 
 CANDIDATES = [
     # Sales — silver medalists from closed AE role (archived timing/comp, not performance)
-    _cand("c_sales_01", "Priya Raman",      "priya@example.com",   "s_linkedin", 400),
-    _cand("c_sales_02", "Marcus Webb",      "marcus@example.com",  "s_referral", 380),
-    _cand("c_sales_03", "Sonia Garcia",     "sonia@example.com",   "s_linkedin", 360),
-    _cand("c_sales_04", "Devon Blake",      "devon@example.com",   "s_agency",   340),  # archived perf
-    _cand("c_sales_05", "Tomás Oliveira",   "tomas@example.com",   "s_inbound",  320),  # hired
-    _cand("c_sales_06", "Kira Nakamura",    "kira@example.com",    "s_linkedin", 50),   # active AE2
+    _cand("c_sales_01", "Priya Raman",    "priya@example.com",  "s_linkedin", 400, position="Senior Account Executive", company="Segment"),
+    _cand("c_sales_02", "Marcus Webb",    "marcus@example.com", "s_referral", 380, position="Enterprise Account Executive", company="Datadog"),
+    _cand("c_sales_03", "Sonia Garcia",   "sonia@example.com",  "s_linkedin", 360, position="Account Executive", company="Gong"),
+    _cand("c_sales_04", "Devon Blake",    "devon@example.com",  "s_agency",   340, position="Account Executive", company="Outreach"),  # archived perf
+    _cand("c_sales_05", "Tomás Oliveira", "tomas@example.com",  "s_inbound",  320, position="Account Executive", company="Intercom"),  # hired
+    _cand("c_sales_06", "Kira Nakamura",  "kira@example.com",   "s_linkedin", 50,  position="Mid-Market AE", company="Notion"),        # active AE2
 
     # Engineering — mix of active and historical
-    _cand("c_eng_01", "Ada Khoury",         "ada@example.com",     "s_referral", 160),  # active staff
-    _cand("c_eng_02", "Jon Park",           "jon@example.com",     "s_linkedin", 140),
-    _cand("c_eng_03", "Ravi Sethi",         "ravi@example.com",    "s_inbound",  100),  # active senior
-    _cand("c_eng_04", "Lena Brodsky",       "lena@example.com",    "s_linkedin", 80),
-    _cand("c_eng_05", "Fiona Zhao",         "fiona@example.com",   "s_referral", 550),  # historical
+    _cand("c_eng_01", "Ada Khoury",   "ada@example.com",   "s_referral", 160, position="Senior Engineer", company="Figma", school="MIT"),          # active staff
+    _cand("c_eng_02", "Jon Park",     "jon@example.com",   "s_linkedin", 140, position="Staff Engineer", company="Airbnb", school="Berkeley"),
+    _cand("c_eng_03", "Ravi Sethi",   "ravi@example.com",  "s_inbound",  100, position="Software Engineer", company="Plaid", school="Waterloo"),  # active senior
+    _cand("c_eng_04", "Lena Brodsky", "lena@example.com",  "s_linkedin", 80,  position="Senior Engineer", company="Rippling", school="CMU"),
+    _cand("c_eng_05", "Fiona Zhao",   "fiona@example.com", "s_referral", 550, position="Staff Engineer", company="Stripe", school="Stanford"),   # historical
 
     # Design Lead search (closed)
-    _cand("c_design_01","Ian Ruiz",         "ian@example.com",     "s_agency",   380),
-    _cand("c_design_02","Nadia Okafor",     "nadia@example.com",   "s_linkedin", 360),  # hired
-    _cand("c_design_03","Ben Carver",       "ben@example.com",     "s_inbound",  340),
+    _cand("c_design_01", "Ian Ruiz",     "ian@example.com",   "s_agency",   380, position="Design Manager", company="Asana"),
+    _cand("c_design_02", "Nadia Okafor", "nadia@example.com", "s_linkedin", 360, position="Lead Product Designer", company="Linear"),  # hired
+    _cand("c_design_03", "Ben Carver",   "ben@example.com",   "s_inbound",  340, position="Staff Designer", company="Notion"),
 
     # Head of Product search (closed)
-    _cand("c_prod_01", "Harper Velez",     "harper@example.com",  "s_referral", 320),  # hired
-    _cand("c_prod_02", "Gavin Ishii",      "gavin@example.com",   "s_linkedin", 300),
-    _cand("c_prod_03", "Ruth Alvarez",     "ruth@example.com",    "s_referral", 280),
+    _cand("c_prod_01", "Harper Velez",  "harper@example.com", "s_referral", 320, position="Director of Product", company="Zapier"),  # hired
+    _cand("c_prod_02", "Gavin Ishii",   "gavin@example.com",  "s_linkedin", 300, position="Group PM", company="Slack"),
+    _cand("c_prod_03", "Ruth Alvarez",  "ruth@example.com",   "s_referral", 280, position="Head of Product", company="Loom"),
 ]
 
 
@@ -157,23 +195,36 @@ CANDIDATES = [
 def _app(aid: str, candidate_id: str, job_id: str, stage_id: str, status: str,
          source_id: str, created_days_ago: int,
          archive_reason_id: str | None = None) -> dict:
+    """Shape: Application as returned by /application.list and /application.info.
+
+    `candidate` is the summary the API embeds ({id, name, primaryEmailAddress,
+    primaryPhoneNumber}) — position/company/school/links are only on
+    /candidate.info. `job` carries locationId / departmentId, not names.
+    """
     cand = next(c for c in CANDIDATES if c["id"] == candidate_id)
     job = next(j for j in JOBS if j["id"] == job_id)
     stage = next(s for s in INTERVIEW_STAGES if s["id"] == stage_id)
     source = next(s for s in SOURCES if s["id"] == source_id)
     app = {
         "id": aid,
-        "candidate": {"id": cand["id"], "name": cand["name"]},
-        "job": {"id": job["id"], "title": job["title"]},
-        "currentInterviewStage": {"id": stage["id"], "title": stage["title"], "type": stage["type"]},
-        "status": status,
-        "source": {"id": source["id"], "title": source["title"]},
         "createdAt": _iso(created_days_ago),
         "updatedAt": _iso(max(0, created_days_ago - 15)),
+        "status": status,
+        "customFields": [],
+        "candidate": {
+            "id": cand["id"], "name": cand["name"],
+            "primaryEmailAddress": cand["primaryEmailAddress"],
+            "primaryPhoneNumber": cand["primaryPhoneNumber"],
+        },
+        "currentInterviewStage": dict(stage),
+        "source": {"id": source["id"], "title": source["title"], "isArchived": False},
+        "job": {"id": job["id"], "title": job["title"],
+                "locationId": job["locationId"], "departmentId": job["departmentId"]},
+        "hiringTeam": [],
     }
     if archive_reason_id:
-        reason = next(r for r in ARCHIVE_REASONS if r["id"] == archive_reason_id)
-        app["archiveReason"] = {"id": reason["id"], "title": reason["title"]}
+        app["archiveReason"] = next(r for r in ARCHIVE_REASONS if r["id"] == archive_reason_id)
+        app["archivedAt"] = app["updatedAt"]
     return app
 
 
@@ -211,17 +262,22 @@ APPLICATIONS = [
     _app("a_18", "c_prod_03", "j_product_hod", "is_archived", "Archived", "s_referral", 280, "ar_timing"),
 ]
 
+# Candidate.applicationIds — the API returns these on every candidate object.
+for _cand_obj in CANDIDATES:
+    _cand_obj["applicationIds"] = [a["id"] for a in APPLICATIONS if a["candidate"]["id"] == _cand_obj["id"]]
+
 
 # ---------------------------------------------------------------------------
 # Candidate notes — attached to re-engagement / outreach targets
 # ---------------------------------------------------------------------------
 
-def _note(nid: str, note: str, days_ago: int, author_email: str) -> dict:
+def _note(nid: str, content: str, days_ago: int, author_email: str) -> dict:
+    """Shape: /candidate.listNotes result — `content` + `author` object."""
     return {
         "id": nid,
-        "note": note,
         "createdAt": _iso(days_ago),
-        "createdByUser": {"email": author_email},
+        "content": content,
+        "author": USERS[author_email],
     }
 
 
@@ -267,6 +323,7 @@ def workspace() -> dict:
         "today": TODAY.isoformat(),
         "sources": SOURCES,
         "archive_reasons": ARCHIVE_REASONS,
+        "locations": LOCATIONS,
         "interview_stages": INTERVIEW_STAGES,
         "jobs": JOBS,
         "candidates": CANDIDATES,

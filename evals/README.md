@@ -53,7 +53,7 @@ Exit code is `0` iff every case passed, so this slots into CI.
 
 The runner installs an `httpx.MockTransport` into `ashby_client._http_client` that routes every `api.ashbyhq.com` call to [`fake_server.py`](fake_server.py), which serves synthetic data from [`workspace.py`](workspace.py). No real Ashby API calls are made.
 
-`ASHBY_OUTPUT=markdown` is forced so evals exercise the table/record formatters users actually see.
+`ASHBY_OUTPUT=markdown` is forced so evals exercise the table/record formatters users actually see. The synthetic objects in `workspace.py` follow the response shapes in the repo's `openapi.json` (`archiveReason.text`, notes with `content` + `author`, jobs with `locationId` / `departmentId` and an expandable `location`, candidates with `socialLinks` / `primaryLocation`, a summary `candidate` on applications) — if the fake mirrored an invented shape, evals would pass while production rendered `—`.
 
 ## Cost
 

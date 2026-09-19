@@ -23,8 +23,10 @@ from .workspace import (
     ARCHIVE_REASONS,
     CANDIDATE_NOTES,
     CANDIDATES,
+    INTERVIEW_PLAN_ID,
     INTERVIEW_STAGES,
     JOBS,
+    LOCATIONS,
     SOURCES,
 )
 
@@ -84,9 +86,21 @@ def candidate_list_notes(body: dict) -> dict:
     return _ok(notes, moreDataAvailable=False)
 
 
+def _expand_job(job: dict, expand: list[str]) -> dict:
+    """Mirror the real API: a Job carries `locationId` only; the location
+    object (and `openings`) appear only when requested via `expand`."""
+    job = dict(job)
+    if "location" in expand:
+        job["location"] = next((l for l in LOCATIONS if l["id"] == job.get("locationId")), None)
+    if "openings" in expand:
+        job["openings"] = []
+    return job
+
+
 def job_list(body: dict) -> dict:
     statuses = body.get("status") or ["Open"]
-    items = [j for j in JOBS if j["status"] in statuses]
+    expand = body.get("expand") or []
+    items = [_expand_job(j, expand) for j in JOBS if j["status"] in statuses]
     page, more, cursor = _paginate(items, body)
     return _ok(page, moreDataAvailable=more, nextCursor=cursor)
 
@@ -94,13 +108,25 @@ def job_list(body: dict) -> dict:
 def job_info(body: dict) -> dict:
     jid = body.get("id")
     job = next((j for j in JOBS if j["id"] == jid), None)
-    return _ok(job) if job else _not_found()
+    return _ok(_expand_job(job, body.get("expand") or [])) if job else _not_found()
 
 
 def job_search(body: dict) -> dict:
+    # job.search has no `expand` — results never carry a location object.
     q = (body.get("title") or "").lower()
     hits = [j for j in JOBS if q in j["title"].lower()]
     return _ok(hits)
+
+
+def _expand_application(app: dict, expand: list[str]) -> dict:
+    """Expanded sub-objects are only present when requested. The synthetic
+    workspace has no openings / form submissions / referrals, so they
+    expand to empty lists — but the keys appear, as in the real API."""
+    app = dict(app)
+    for key in ("openings", "applicationFormSubmissions", "referrals"):
+        if key in expand:
+            app[key] = []
+    return app
 
 
 def application_list(body: dict) -> dict:
@@ -109,6 +135,8 @@ def application_list(body: dict) -> dict:
         items = [a for a in items if a["status"] == status]
     if job_id := body.get("jobId"):
         items = [a for a in items if a["job"]["id"] == job_id]
+    expand = [e for e in (body.get("expand") or []) if e == "openings"]
+    items = [_expand_application(a, expand) for a in items]
     page, more, cursor = _paginate(items, body)
     return _ok(page, moreDataAvailable=more, nextCursor=cursor)
 
@@ -116,7 +144,7 @@ def application_list(body: dict) -> dict:
 def application_info(body: dict) -> dict:
     aid = body.get("applicationId") or body.get("id")
     app = next((a for a in APPLICATIONS if a["id"] == aid), None)
-    return _ok(app) if app else _not_found()
+    return _ok(_expand_application(app, body.get("expand") or [])) if app else _not_found()
 
 
 def source_list(body: dict) -> dict:
@@ -127,17 +155,18 @@ def source_list(body: dict) -> dict:
 
 
 def interview_stage_list(body: dict) -> dict:
-    return _ok(INTERVIEW_STAGES)
+    return _ok(INTERVIEW_STAGES, moreDataAvailable=False)
 
 
 def interview_plan_list(body: dict) -> dict:
-    # The synthetic workspace only has one implicit plan — return a
-    # minimal entry so the agent's discovery calls don't fail.
-    return _ok([{"id": "ip_default", "title": "Default Interview Plan", "isArchived": False}])
+    # The synthetic workspace only has one plan — return a minimal entry
+    # so the agent's discovery calls don't fail.
+    return _ok([{"id": INTERVIEW_PLAN_ID, "title": "Default Interview Plan", "isArchived": False}],
+               moreDataAvailable=False)
 
 
 def archive_reason_list(body: dict) -> dict:
-    # Surface in the shape `list_custom_fields` etc. use — flat list with ids.
+    # Same objects the applications embed: {id, text, reasonType, isArchived}.
     return _ok(ARCHIVE_REASONS)
 
 

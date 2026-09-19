@@ -75,7 +75,7 @@ def all_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_candidate",
-            description="Fetch a single candidate by ID (full record including custom fields, applications, etc.)",
+            description="Fetch a single candidate by ID (full record including position/company/school, social links, location, tags, custom fields, application ids, resume/file handles).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -241,7 +241,7 @@ def all_tools() -> list[types.Tool]:
         # Project Tools
         types.Tool(
             name="get_project",
-            description="Fetch a single project by id (returns title, archived state, associated jobs, etc.).",
+            description="Fetch a single project by id (returns title, description, archived/confidential state, author, custom field entries).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -416,7 +416,7 @@ def all_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="list_jobs",
-            description="List all jobs, optionally filtered by status (Open, Closed, Archived, Draft). Defaults to Open jobs.",
+            description="List all jobs, optionally filtered by status (Open, Closed, Archived, Draft). Defaults to Open jobs. Jobs carry only locationId / departmentId; the location object is expanded by default so the location name is shown.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -427,6 +427,11 @@ def all_tools() -> list[types.Tool]:
                     },
                     "openedAfter": {"type": "integer", "description": "Return jobs opened after this unix epoch millis timestamp"},
                     "openedBefore": {"type": "integer", "description": "Return jobs opened before this unix epoch millis timestamp"},
+                    "expand": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["location", "openings"]},
+                        "description": "Related objects to expand. Defaults to [\"location\"]."
+                    },
                     "cursor": {"type": "string", "description": "Pagination cursor from a previous response"},
                     "limit": {"type": "integer", "description": "Max results per page"}
                 }
@@ -434,7 +439,7 @@ def all_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_job",
-            description="Fetch a single job by id.",
+            description="Fetch a single job by id. Jobs carry only locationId / departmentId; `location` is expanded by default so the location name is shown.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -443,7 +448,7 @@ def all_tools() -> list[types.Tool]:
                     "expand": {
                         "type": "array",
                         "items": {"type": "string", "enum": ["location", "openings"]},
-                        "description": "Optional related objects to expand"
+                        "description": "Related objects to expand. Defaults to [\"location\"]."
                     }
                 },
                 "required": ["id"]

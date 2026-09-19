@@ -157,7 +157,7 @@ uv run ruff check             # lint
 uv run ruff format --check    # formatting (drop --check to apply)
 ```
 
-`uv sync` installs the package itself (editable, from `src/ashby`), so `import ashby` works in the project venv and the tests exercise the same package layout users install. Unit tests cover every tool's routing and request shape, the markdown formatters, error surfacing, and a few guards that keep the tool registry, this README, and Ashby's spec in sync. Live tests hit only read-only endpoints (`list_*`, `get_*`, `search_*`) so they can't corrupt workspace data; they exist to catch contract drift.
+`uv sync` installs the package itself (editable, from `src/ashby`), so `import ashby` works in the project venv and the tests exercise the same package layout users install. Unit tests cover every tool's routing and request shape, the markdown formatters, and error surfacing. A set of guard tests keeps the moving pieces honest: `test_tools.py` keeps the tool registry, this README's tool count, and the spec's `required` fields in sync; `test_spec_alignment.py` walks every markdown column's field path against `openapi.json`'s response schemas, so a column can't silently point at a field Ashby doesn't return; and `test_eval_fixtures.py` checks that the synthetic eval workspace actually populates every field those columns read, so the evals can't quietly pass on data production never produces. Live tests hit only read-only endpoints (`list_*`, `get_*`, `search_*`) so they can't corrupt workspace data; they exist to catch contract drift.
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same lint, format and test steps on every push to `main` and every pull request, checks that `uv.lock` is in sync with `pyproject.toml`, and runs `pip-audit` against the locked dependency set.
 
@@ -176,26 +176,28 @@ Commit the updated `uv.lock` with the change; CI's `pip-audit` step will flag an
 
 ```
 src/ashby/
-  __init__.py            # main() — the `ashby-mcp` console script
-  server.py              # MCP Server wiring: registers tool list + dispatcher, picks a transport
-  tools.py               # tool schemas — the names, descriptions and inputSchemas clients see
-  handlers.py            # dispatcher: tool name → Ashby endpoint (_SIMPLE) or custom handler (_SPECIAL)
-  client.py              # AshbyClient — httpx, HTTP Basic auth, tenacity retries on 429/5xx
-  policy.py              # ASHBY_READ_ONLY / ASHBY_UPLOAD_DIR / transport-aware tool policy
-  formatting.py          # markdown tables / records for LLM-friendly output (see ASHBY_OUTPUT)
-  transport.py           # stdio and HTTP+SSE transports — bearer auth, fail-closed startup, /healthz
+  __init__.py    # main() — the `ashby-mcp` console script
+  server.py      # MCP Server wiring: registers tool list + dispatcher, picks a transport
+  tools.py       # tool schemas — the names, descriptions and inputSchemas clients see
+  handlers.py    # dispatcher: tool name → Ashby endpoint (_SIMPLE) or custom handler (_SPECIAL)
+  client.py      # AshbyClient — httpx, HTTP Basic auth, tenacity retries on 429/5xx
+  policy.py      # ASHBY_READ_ONLY / ASHBY_UPLOAD_DIR / transport-aware tool policy
+  formatting.py  # markdown tables / records for LLM-friendly output (see ASHBY_OUTPUT)
+  transport.py   # stdio and HTTP+SSE transports — bearer auth, fail-closed startup, /healthz
 tests/
-  conftest.py            # shared fixtures: mocked HTTP, dummy API key, JSON output mode
-  test_routing.py        # one test per tool — endpoint hit and body sent
-  test_formatting.py     # formatter unit tests + end-to-end markdown rendering
-  test_error_handling.py # error bodies surfaced to the caller, missing key, logging
-  test_tools.py          # registry ↔ handler consistency, README tool count, spec-required fields
-  test_policy.py         # read-only mode, upload confinement, tool annotations
-  test_transport.py      # HTTP auth, fail-closed startup, advertised server name/version
-  test_live.py           # opt-in live smoke tests
-evals/                   # LLM-in-the-loop evals against a fake Ashby (see evals/README.md)
-openapi.json             # Ashby's full OpenAPI spec (reference for adding new tools)
-render.yaml              # Render blueprint for the HTTP/SSE deployment
+  conftest.py             # shared fixtures: mocked HTTP, dummy API key, JSON output mode
+  test_routing.py         # one test per tool — endpoint hit and body sent
+  test_formatting.py      # formatter unit tests + end-to-end markdown rendering
+  test_spec_alignment.py  # every markdown accessor resolves against openapi.json's response schemas
+  test_eval_fixtures.py   # the eval workspace populates every field the formatters read
+  test_error_handling.py  # error bodies surfaced to the caller, missing key, logging
+  test_tools.py           # registry ↔ handler consistency, README tool count, spec-required fields
+  test_policy.py          # read-only mode, upload confinement, tool annotations
+  test_transport.py       # HTTP auth, fail-closed startup, advertised server name/version
+  test_live.py            # opt-in live smoke tests
+evals/        # LLM-in-the-loop evals against a fake Ashby (see evals/README.md)
+openapi.json  # Ashby's full OpenAPI spec (reference for adding new tools)
+render.yaml   # Render blueprint for the HTTP/SSE deployment
 ```
 
 ## Adding a new tool

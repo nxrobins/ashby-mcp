@@ -121,7 +121,6 @@ def build_http_app(server: Server, bearer_token: str | None):
     whether auth is on. Split out of run_http() so tests can drive the app
     with starlette's TestClient without binding a port.
     """
-    import uvicorn
     from mcp.server.sse import SseServerTransport
     from starlette.applications import Starlette
     from starlette.datastructures import Headers

@@ -5,6 +5,13 @@
 # Render auto-provisions the service with everything below. You fill in
 # ASHBY_API_KEY and MCP_BEARER_TOKEN in the Render UI when prompted
 # (both are marked `sync: false` so they're never committed to git).
+#
+# MCP_BEARER_TOKEN is not optional: the server refuses to start on
+# 0.0.0.0 without one, so a deploy that skips it fails its health check
+# instead of coming up open. Optional hardening (add under envVars, see
+# README → "Security note"):
+#   ASHBY_READ_ONLY=1   — reporting-only deployment, no write tools
+#   ASHBY_UPLOAD_DIR    — re-enables the upload tools, confined to that dir
 services:
   - type: web
     name: ashby-mcp

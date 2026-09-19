@@ -144,9 +144,10 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
     )
     text = await _call_raw("list_candidates", {"limit": 2})
     assert "## Candidates (2)" in text
-    assert "| id | name | email | source | created |" in text
-    assert "| c1 | Ada Lovelace | ada@example.com | LinkedIn |" in text
-    assert "| c2 | Alan Turing | alan@example.com | Referral |" in text
+    assert "| id | name | position | company | school | linkedin | email | source | created |" in text
+    # Missing position/company/school/linkedin render as em-dash placeholders.
+    assert "| c1 | Ada Lovelace | — | — | — | — | ada@example.com | LinkedIn |" in text
+    assert "| c2 | Alan Turing | — | — | — | — | alan@example.com | Referral |" in text
     # Make sure the verbose raw JSON envelope is NOT in the output.
     assert '"success": true' not in text
 

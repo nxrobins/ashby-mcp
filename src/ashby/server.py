@@ -22,6 +22,7 @@ import os
 from dotenv import load_dotenv
 from mcp.server import Server
 
+from . import policy
 from .handlers import dispatch
 from .tools import all_tools
 from .transport import run_http, run_stdio
@@ -47,8 +48,7 @@ async def run() -> None:
     Port selection for HTTP mode tries MCP_PORT first, then PORT (the
     convention used by Render, Heroku, Fly, Railway, etc.), then 8000.
     """
-    transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
-    if transport == "http":
+    if policy.is_http_transport():
         host = os.getenv("MCP_HOST", "127.0.0.1")
         port = int(os.getenv("MCP_PORT") or os.getenv("PORT") or "8000")
         await run_http(server, host, port)

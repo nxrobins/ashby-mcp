@@ -122,3 +122,26 @@ async def test_failure_is_logged_with_detail(httpx_mock, call_tool, caplog):
     assert "400" in combined or "bad_input" in combined, (
         f"expected failure log to mention status or error body. Got: {combined!r}"
     )
+
+
+async def test_long_error_bodies_are_truncated_in_logs(httpx_mock, call_tool, caplog):
+    """Ashby error envelopes echo the request back, so log lines are capped
+    rather than carrying whole candidate records into the log stream. The
+    caller still receives the complete body."""
+    echoed = {"success": False, "errors": ["bad_input"], "echo": "x" * 5000}
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.search",
+        status_code=400,
+        json=echoed,
+    )
+    with caplog.at_level(logging.WARNING, logger="ashby"):
+        result = await call_tool("search_candidates", {"name": ""})
+    records = [r for r in caplog.records if r.name.startswith("ashby")]
+    assert records
+    for record in records:
+        message = record.getMessage()
+        assert len(message) < 1000, message[:120]
+        assert "truncated" in message
+    assert isinstance(result, str)
+    assert "x" * 5000 in result

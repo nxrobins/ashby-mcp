@@ -1,13 +1,137 @@
-"""Tool schema definitions — the full list exposed to MCP clients."""
+"""Tool schema definitions — the full list exposed to MCP clients.
+
+Every tool is classified in `_HINTS` below (read-only / destructive /
+idempotent). The classification is published to clients as MCP tool
+annotations, so a client can confirm before running a write, and it
+drives the ASHBY_READ_ONLY policy, so there is no second list to keep in
+sync. A tool without an entry fails at import instead of shipping
+unclassified. `all_tools()` applies the runtime policy in policy.py.
+"""
+
+from dataclasses import dataclass
 
 import mcp.types as types
 
+from . import policy
 
-def all_tools() -> list[types.Tool]:
-    """Return the list of Ashby MCP tools, with their JSON-schema inputs."""
+
+@dataclass(frozen=True)
+class Hints:
+    """MCP tool annotations (readOnlyHint / destructiveHint / idempotentHint)."""
+
+    read_only: bool
+    destructive: bool
+    idempotent: bool
+
+
+READ_ONLY = Hints(read_only=True, destructive=False, idempotent=True)
+# Writes, by effect. "Destructive" follows the MCP spec: the call may
+# overwrite or remove existing data, as opposed to only adding to it.
+ADDITIVE = Hints(read_only=False, destructive=False, idempotent=False)             # creates a new record each call
+ADDITIVE_IDEMPOTENT = Hints(read_only=False, destructive=False, idempotent=True)   # attaches; repeating is a no-op
+DESTRUCTIVE = Hints(read_only=False, destructive=True, idempotent=False)           # overwrites; repeating adds more
+DESTRUCTIVE_IDEMPOTENT = Hints(read_only=False, destructive=True, idempotent=True) # overwrites/removes; repeating is a no-op
+
+_HINTS: dict[str, Hints] = {
+    # Candidates
+    "create_candidate":           ADDITIVE,
+    "search_candidates":          READ_ONLY,
+    "list_candidates":            READ_ONLY,
+    "list_all_candidates":        READ_ONLY,
+    "get_candidate":              READ_ONLY,
+    "update_candidate":           DESTRUCTIVE_IDEMPOTENT,
+    "add_candidate_tag":          ADDITIVE_IDEMPOTENT,
+    "list_candidate_tags":        READ_ONLY,
+    "add_candidate_to_project":   ADDITIVE_IDEMPOTENT,
+    "create_candidate_note":      ADDITIVE,
+    "list_candidate_notes":       READ_ONLY,
+    "list_candidate_client_info": READ_ONLY,
+    "anonymize_candidate":        DESTRUCTIVE_IDEMPOTENT,  # irreversible
+    "upload_candidate_resume":    DESTRUCTIVE,             # replaces the primary resume
+    "upload_candidate_file":      ADDITIVE,
+    # Projects
+    "get_project":                READ_ONLY,
+    "list_projects":              READ_ONLY,
+    "search_projects":            READ_ONLY,
+    # Custom fields
+    "list_custom_fields":         READ_ONLY,
+    "get_custom_field":           READ_ONLY,
+    "create_custom_field":        ADDITIVE,
+    "set_custom_field_value":     DESTRUCTIVE_IDEMPOTENT,
+    # Jobs
+    "create_job":                 ADDITIVE,
+    "search_jobs":                READ_ONLY,
+    "list_jobs":                  READ_ONLY,
+    "get_job":                    READ_ONLY,
+    "update_job":                 DESTRUCTIVE_IDEMPOTENT,
+    "set_job_status":             DESTRUCTIVE_IDEMPOTENT,
+    # Applications
+    "create_application":         ADDITIVE,
+    "list_applications":          READ_ONLY,
+    "get_application":            READ_ONLY,
+    "update_application":         DESTRUCTIVE_IDEMPOTENT,
+    "change_application_stage":   DESTRUCTIVE_IDEMPOTENT,
+    "change_application_source":  DESTRUCTIVE_IDEMPOTENT,
+    "transfer_application":       DESTRUCTIVE_IDEMPOTENT,
+    "add_application_hiring_team_member":    ADDITIVE_IDEMPOTENT,
+    "remove_application_hiring_team_member": DESTRUCTIVE_IDEMPOTENT,
+    # Interviews
+    "get_interview":              READ_ONLY,
+    "list_interviews":            READ_ONLY,
+    "create_interview_schedule":  ADDITIVE,
+    "list_interview_schedules":   READ_ONLY,
+    "update_interview_schedule":  DESTRUCTIVE,  # creates a new event when no interviewEventId is given
+    "cancel_interview_schedule":  DESTRUCTIVE_IDEMPOTENT,
+    "list_interview_events":      READ_ONLY,
+    "list_interview_plans":       READ_ONLY,
+    "list_interview_stages":      READ_ONLY,
+    "get_interview_stage":        READ_ONLY,
+    "list_interview_stage_groups": READ_ONLY,
+    "list_sources":               READ_ONLY,
+    "list_application_feedback":  READ_ONLY,
+}
+
+# Tools that open a file on the machine running the server. See
+# policy.uploads_enabled() for why these are off by default over HTTP.
+LOCAL_FILE_TOOLS = frozenset({"upload_candidate_resume", "upload_candidate_file"})
+
+
+def _annotations(hints: Hints):
+    """Build the `annotations` value for a Tool on whatever mcp is installed.
+
+    `mcp.types.ToolAnnotations` exists from mcp 1.6. Older releases (the
+    lockfile pins 1.1.2) have no such field, but every mcp type allows
+    extras, so a plain dict is stored and serialised verbatim in
+    tools/list — which is exactly the wire format.
+    """
+    fields = {
+        "readOnlyHint": hints.read_only,
+        "destructiveHint": hints.destructive,
+        "idempotentHint": hints.idempotent,
+    }
+    typed = getattr(types, "ToolAnnotations", None)
+    return typed(**fields) if typed is not None else fields
+
+
+def _tool(*, name: str, description: str, inputSchema: dict) -> types.Tool:
+    """A types.Tool carrying the annotations from `_HINTS`.
+
+    KeyError here means a new tool was added without classifying it —
+    add it to `_HINTS` (which is what ASHBY_READ_ONLY keys off).
+    """
+    return types.Tool(
+        name=name,
+        description=description,
+        inputSchema=inputSchema,
+        annotations=_annotations(_HINTS[name]),
+    )
+
+
+def _catalog() -> list[types.Tool]:
+    """Every Ashby MCP tool, with their JSON-schema inputs, before policy."""
     return [
         # Candidate Management Tools
-        types.Tool(
+        _tool(
             name="create_candidate",
             description="Create a new candidate in Ashby. Only `name` is required; other fields are optional but useful.",
             inputSchema={
@@ -40,7 +164,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["name"]
             }
         ),
-        types.Tool(
+        _tool(
             name="search_candidates",
             description="Search for candidates by email and/or name",
             inputSchema={
@@ -51,7 +175,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="list_candidates",
             description="List candidates. Uses Ashby's cursor-based pagination.",
             inputSchema={
@@ -63,7 +187,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="list_all_candidates",
             description="Fetch ALL candidates by auto-paginating through every page. Returns the complete list. Use list_candidates instead for large workspaces where you only need a single page.",
             inputSchema={
@@ -73,7 +197,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="get_candidate",
             description="Fetch a single candidate by ID (full record including custom fields, applications, etc.)",
             inputSchema={
@@ -84,7 +208,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["id"]
             }
         ),
-        types.Tool(
+        _tool(
             name="update_candidate",
             description="Update an existing candidate's fields. Only send fields you want to change.",
             inputSchema={
@@ -124,7 +248,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="add_candidate_tag",
             description="Attach a tag to a candidate. Use list_candidate_tags to discover tagId.",
             inputSchema={
@@ -136,7 +260,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId", "tagId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_candidate_tags",
             description="List all candidate tags available in the Ashby workspace (for discovering tagId).",
             inputSchema={
@@ -149,7 +273,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="add_candidate_to_project",
             description="Attach a candidate to a project.",
             inputSchema={
@@ -161,7 +285,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId", "projectId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="create_candidate_note",
             description="Add a note to a candidate.",
             inputSchema={
@@ -174,7 +298,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId", "note"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_candidate_notes",
             description="List notes attached to a candidate.",
             inputSchema={
@@ -188,7 +312,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_candidate_client_info",
             description="List client info records (e.g. agency submissions) for a candidate.",
             inputSchema={
@@ -202,7 +326,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="anonymize_candidate",
             description="Anonymize a candidate (GDPR / data retention). Irreversible.",
             inputSchema={
@@ -213,7 +337,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="upload_candidate_resume",
             description="Upload a resume to a candidate. `file_path` must be a path on the machine running this MCP server.",
             inputSchema={
@@ -225,7 +349,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId", "file_path"]
             }
         ),
-        types.Tool(
+        _tool(
             name="upload_candidate_file",
             description="Upload an arbitrary file to a candidate. `file_path` must be a path on the machine running this MCP server.",
             inputSchema={
@@ -239,7 +363,7 @@ def all_tools() -> list[types.Tool]:
         ),
 
         # Project Tools
-        types.Tool(
+        _tool(
             name="get_project",
             description="Fetch a single project by id (returns title, archived state, associated jobs, etc.).",
             inputSchema={
@@ -250,7 +374,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["projectId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_projects",
             description="List all projects with cursor-based pagination.",
             inputSchema={
@@ -262,7 +386,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="search_projects",
             description="Search projects by title (required). Capped at 100 results — use list_projects with pagination to scan everything.",
             inputSchema={
@@ -275,7 +399,7 @@ def all_tools() -> list[types.Tool]:
         ),
 
         # Custom Field Tools
-        types.Tool(
+        _tool(
             name="list_custom_fields",
             description="List all custom fields defined in the workspace. Use the optional `objectType` arg to filter client-side (e.g. only Candidate fields for referral data). Returns field id, title, fieldType, and selectableValues you'll need for set_custom_field_value.",
             inputSchema={
@@ -293,7 +417,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="get_custom_field",
             description="Fetch a single custom field definition by id.",
             inputSchema={
@@ -304,7 +428,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["customFieldId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="create_custom_field",
             description="Create a new custom field definition. Rare/admin operation — requires hiringProcessMetadataWrite permission.",
             inputSchema={
@@ -338,7 +462,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["title", "fieldType", "objectType"]
             }
         ),
-        types.Tool(
+        _tool(
             name="set_custom_field_value",
             description=(
                 "Set a custom field's value on a specific object (Candidate, Application, Job, or Opening). "
@@ -384,7 +508,7 @@ def all_tools() -> list[types.Tool]:
         ),
 
         # Job Management Tools
-        types.Tool(
+        _tool(
             name="create_job",
             description="Create a new job. Requires `title`. Ashby uses IDs for team, location, and interview plan — discover them via list_departments / list_locations / list_interview_plans (not yet exposed) or via the Ashby UI.",
             inputSchema={
@@ -400,7 +524,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["title"]
             }
         ),
-        types.Tool(
+        _tool(
             name="search_jobs",
             description="Search jobs by title (required). Use list_jobs to enumerate without a title.",
             inputSchema={
@@ -414,7 +538,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["title"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_jobs",
             description="List all jobs, optionally filtered by status (Open, Closed, Archived, Draft). Defaults to Open jobs.",
             inputSchema={
@@ -432,7 +556,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="get_job",
             description="Fetch a single job by id.",
             inputSchema={
@@ -449,7 +573,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["id"]
             }
         ),
-        types.Tool(
+        _tool(
             name="update_job",
             description="Update a job's metadata (title, team, location, interview plan, etc.). Use set_job_status to change open/closed/archived state.",
             inputSchema={
@@ -465,7 +589,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["jobId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="set_job_status",
             description="Change a job's status (Draft, Open, Closed, Archived).",
             inputSchema={
@@ -479,7 +603,7 @@ def all_tools() -> list[types.Tool]:
         ),
 
         # Application Management Tools
-        types.Tool(
+        _tool(
             name="create_application",
             description="Create a new application — consider a candidate for a job.",
             inputSchema={
@@ -496,7 +620,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["candidateId", "jobId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_applications",
             description="List applications with cursor pagination and filters.",
             inputSchema={
@@ -512,7 +636,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="get_application",
             description="Fetch a single application by id. Use `expand` to include openings / form submissions / referrals.",
             inputSchema={
@@ -527,7 +651,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="update_application",
             description="Update an application's metadata (source, createdAt, credited user, etc.).",
             inputSchema={
@@ -542,7 +666,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["applicationId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="change_application_stage",
             description="Move an application to a different interview stage. When moving to an Archived stage, archiveReasonId is required.",
             inputSchema={
@@ -555,7 +679,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["applicationId", "interviewStageId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="change_application_source",
             description="Change an application's source attribution. Pass sourceId=null to clear the source.",
             inputSchema={
@@ -567,7 +691,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["applicationId", "sourceId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="transfer_application",
             description="Transfer an application to a different job.",
             inputSchema={
@@ -582,7 +706,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["applicationId", "jobId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="add_application_hiring_team_member",
             description="Assign a user to a hiring team role on an application.",
             inputSchema={
@@ -595,7 +719,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["applicationId", "teamMemberId", "roleId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="remove_application_hiring_team_member",
             description="Remove a user from a hiring team role on an application.",
             inputSchema={
@@ -614,7 +738,7 @@ def all_tools() -> list[types.Tool]:
         # Ashby splits this into two endpoint groups:
         #   /interview.*          — read interview-type definitions (the templates configured per job)
         #   /interviewSchedule.*  — create/list/update/cancel actual scheduled interview events
-        types.Tool(
+        _tool(
             name="get_interview",
             description="Fetch a single interview-type definition by id (not a scheduled event; see get_interview_schedule for that).",
             inputSchema={
@@ -625,7 +749,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["id"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_interviews",
             description="List interview-type definitions configured in the workspace.",
             inputSchema={
@@ -642,7 +766,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="create_interview_schedule",
             description=(
                 "Create a scheduled set of interview events for an application. "
@@ -679,7 +803,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["applicationId", "interviewEvents"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_interview_schedules",
             description="List scheduled interview events, optionally filtered by application or stage.",
             inputSchema={
@@ -694,7 +818,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="update_interview_schedule",
             description="Create or update a single event on an existing interview schedule. Only schedules created by the same API key can be updated.",
             inputSchema={
@@ -726,7 +850,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["interviewScheduleId", "interviewEvent"]
             }
         ),
-        types.Tool(
+        _tool(
             name="cancel_interview_schedule",
             description="Cancel a scheduled interview. Set allowReschedule=true if the candidate may reschedule.",
             inputSchema={
@@ -738,7 +862,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["id"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_interview_events",
             description=(
                 "List the individual interview events for a given schedule. "
@@ -758,7 +882,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["interviewScheduleId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_interview_plans",
             description="List all interview plans in the workspace. Useful for discovering interviewPlanId values for create_application / transfer_application.",
             inputSchema={
@@ -768,7 +892,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="list_interview_stages",
             description="List all interview stages for a given interview plan, in order. Use this to discover interviewStageId values for change_application_stage / transfer_application.",
             inputSchema={
@@ -779,7 +903,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["interviewPlanId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="get_interview_stage",
             description="Fetch a single interview stage by id.",
             inputSchema={
@@ -790,7 +914,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["interviewStageId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_interview_stage_groups",
             description="List interview stage groups for an interview plan, in order. Groups organize stages into logical phases (e.g. Pre-Screen, Onsite, Offer).",
             inputSchema={
@@ -801,7 +925,7 @@ def all_tools() -> list[types.Tool]:
                 "required": ["interviewPlanId"]
             }
         ),
-        types.Tool(
+        _tool(
             name="list_sources",
             description="List all candidate sources defined in the workspace. Returns id and title for each source — use the id with create_candidate (sourceId) and change_application_source. Requires hiringProcessMetadataRead permission.",
             inputSchema={
@@ -814,7 +938,7 @@ def all_tools() -> list[types.Tool]:
                 }
             }
         ),
-        types.Tool(
+        _tool(
             name="list_application_feedback",
             description=(
                 "List interview feedback submissions for an application. "
@@ -837,3 +961,31 @@ def all_tools() -> list[types.Tool]:
             }
         ),
     ]
+
+
+# Built once at import so an unclassified tool fails loudly, here.
+_CATALOG: list[types.Tool] = _catalog()
+ALL_TOOL_NAMES = frozenset(t.name for t in _CATALOG)
+READ_ONLY_TOOLS = frozenset(name for name in ALL_TOOL_NAMES if _HINTS[name].read_only)
+WRITE_TOOLS = ALL_TOOL_NAMES - READ_ONLY_TOOLS
+
+
+def tool_blocked_reason(name: str) -> str | None:
+    """Why `name` is unavailable under the current policy, or None if it may run.
+
+    Used by all_tools() to hide the tool and by handlers.dispatch() to
+    reject it, so a client that ignores tools/list gets the same answer.
+    """
+    if name in WRITE_TOOLS and policy.read_only_mode():
+        return "this server is running in read-only mode (ASHBY_READ_ONLY is set)"
+    if name in LOCAL_FILE_TOOLS and not policy.uploads_enabled():
+        return (
+            "file uploads are disabled over the HTTP transport; set ASHBY_UPLOAD_DIR "
+            "on the server to the directory it may upload files from to enable them"
+        )
+    return None
+
+
+def all_tools() -> list[types.Tool]:
+    """The tools exposed to the connected client under the current policy."""
+    return [t for t in _CATALOG if tool_blocked_reason(t.name) is None]

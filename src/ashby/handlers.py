@@ -18,7 +18,8 @@ from typing import Any, Awaitable, Callable, Sequence
 
 import mcp.types as types
 
-from .client import ashby_client
+from . import policy
+from .client import ashby_client, truncate_for_log
 from .formatting import (
     Column,
     format_json,
@@ -26,6 +27,7 @@ from .formatting import (
     format_record,
     output_format,
 )
+from .tools import tool_blocked_reason
 
 logger = logging.getLogger("ashby.handlers")
 
@@ -326,23 +328,25 @@ async def _list_custom_fields(arguments: dict) -> list[types.TextContent]:
 
 
 async def _upload_candidate_resume(arguments: dict) -> list[types.TextContent]:
-    path = arguments["file_path"]
+    # resolve_upload_path confines the path to ASHBY_UPLOAD_DIR (and refuses
+    # it outright over HTTP without one) — the model chooses `file_path`.
+    path = policy.resolve_upload_path(arguments["file_path"])
     with open(path, "rb") as f:
         response = await ashby_client._make_multipart_request(
             "/candidate.uploadResume",
             data={"candidateId": arguments["candidateId"]},
-            files={"resume": (os.path.basename(path), f)},
+            files={"resume": (os.path.basename(arguments["file_path"]), f)},
         )
     return _text("upload_candidate_resume", "Resume uploaded", response)
 
 
 async def _upload_candidate_file(arguments: dict) -> list[types.TextContent]:
-    path = arguments["file_path"]
+    path = policy.resolve_upload_path(arguments["file_path"])
     with open(path, "rb") as f:
         response = await ashby_client._make_multipart_request(
             "/candidate.uploadFile",
             data={"candidateId": arguments["candidateId"]},
-            files={"file": (os.path.basename(path), f)},
+            files={"file": (os.path.basename(arguments["file_path"]), f)},
         )
     return _text("upload_candidate_file", "File uploaded", response)
 
@@ -384,8 +388,15 @@ _SPECIAL: dict[str, Callable[[dict], Awaitable[list[types.TextContent]]]] = {
 
 
 async def dispatch(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
-    """Route a tool invocation to its handler (table-lookup + fallback)."""
+    """Route a tool invocation to its handler (table-lookup + fallback).
+
+    The policy check runs first so a tool hidden from tools/list (read-only
+    mode, uploads over HTTP) is also refused if a client calls it anyway.
+    """
     logger.info("dispatch %s", name)
+    if reason := tool_blocked_reason(name):
+        logger.warning("tool %s rejected by policy: %s", name, reason)
+        return [types.TextContent(type="text", text=f"Error executing {name}: {reason}")]
     try:
         if handler := _SPECIAL.get(name):
             return await handler(arguments)
@@ -395,5 +406,5 @@ async def dispatch(name: str, arguments: dict[str, Any]) -> list[types.TextConte
             return _text(name, prefix, response)
         raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
-        logger.warning("tool %s failed: %s", name, e)
+        logger.warning("tool %s failed: %s", name, truncate_for_log(str(e)))
         return [types.TextContent(type="text", text=f"Error executing {name}: {str(e)}")]

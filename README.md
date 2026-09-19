@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that exposes Ashby ATS operations to Claud
 
 ## What's included
 
-44 tools across seven areas:
+50 tools across seven areas:
 
 - **Candidates** — create, search, list, list all (auto-paginated), get, update, notes, tags, projects, client info, anonymize, resume + file upload
 - **Jobs** — create, search, list, get, update, set status (Open/Closed/Archived/Draft)
@@ -86,6 +86,8 @@ A [`render.yaml`](render.yaml) blueprint is checked in — Render reads it and p
    # → {"ok":true,"auth_required":true}
    ```
 
+   If the service never becomes healthy, check its logs: without `MCP_BEARER_TOKEN` the server deliberately refuses to start (see [Security note](#security-note)). Consider adding `ASHBY_READ_ONLY=1` to the service's environment if teammates only need reporting.
+
 ### Per-teammate setup in Cowork
 
 1. In Cowork: **Customize → Connectors → Add custom connector**
@@ -100,6 +102,21 @@ The bearer token is the only thing standing between the public internet and your
 - Share via 1Password / Slack DM, not email or git.
 - Rotate by changing `MCP_BEARER_TOKEN` in Render's dashboard → teammates update their Cowork connector config.
 - Never log it, commit it, or put it in a docs page.
+
+The HTTP transport **fails closed**: if `MCP_BEARER_TOKEN` is unset or blank while `MCP_HOST` is anything other than loopback (`127.0.0.1`, `localhost`, `::1`), the server refuses to start with a clear error and exit code 1. A Render deploy that skipped the token therefore fails its health check instead of coming up open on the internet with a live Ashby key — look for `refusing to start the HTTP transport` in the service logs. Tokens are compared in constant time, and `/healthz` reports `"auth_required": true` whenever a token is enforced.
+
+Hardening knobs, all read from the environment:
+
+| Variable | Effect |
+|---|---|
+| `MCP_BEARER_TOKEN` | Required on any non-loopback bind (see above). Every `/sse` and `/messages/` request must send `Authorization: Bearer <token>`. |
+| `MCP_ALLOW_INSECURE=1` | Escape hatch: start without a token on a public bind anyway. Local testing only — never set it on Render. |
+| `ASHBY_READ_ONLY=1` | Removes every tool that writes to Ashby (create/update, `anonymize_candidate`, `set_job_status`, `change_application_stage`, `transfer_application`, `cancel_interview_schedule`, uploads, …) from the tool list, and rejects them if a client calls one anyway. Recommended for a shared Cowork deployment that only needs reporting. |
+| `ASHBY_UPLOAD_DIR` | Over HTTP the two upload tools are **off by default**: their `file_path` argument would otherwise let any token holder — or a prompt injection carried in a candidate's notes or resume — read arbitrary files from the server container (for example `/proc/self/environ`, which holds the Ashby key) and store them in Ashby. Setting this to a directory re-enables the upload tools and confines `file_path` to it; symlinks and `..` are resolved before the check. Over stdio (your own machine) uploads stay unrestricted unless you set it, in which case the same confinement applies. |
+
+Every tool also carries MCP tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`), so clients that honour them can ask before running a write and flag irreversible ones.
+
+Logging: uvicorn's per-request access log is disabled (each line would include the `?session_id=...` of a live MCP session), and Ashby error bodies are truncated to 500 characters in log lines because they can echo candidate data. The full error still reaches the caller.
 
 ### Why not a free Cloudflare quick tunnel?
 
@@ -122,10 +139,18 @@ Unit tests cover every tool's routing and request shape. Live tests hit only rea
 ```
 src/ashby/
   __init__.py       # entry point
-  server.py         # AshbyClient + MCP tool definitions + dispatcher
+  server.py         # MCP Server wiring — registers tools + dispatcher, picks a transport
+  tools.py          # tool schemas + read-only/destructive classification (MCP annotations)
+  handlers.py       # tool dispatcher → Ashby API
+  client.py         # Ashby HTTP client (auth, retries, error surfacing)
+  policy.py         # ASHBY_READ_ONLY / ASHBY_UPLOAD_DIR / transport-aware tool policy
+  transport.py      # stdio and HTTP+SSE transports (bearer auth, fail-closed startup)
+  formatting.py     # markdown rendering of Ashby responses
 tests/
   conftest.py       # shared fixtures
   test_routing.py   # unit tests (one per tool)
+  test_policy.py    # read-only mode, upload confinement, tool annotations
+  test_transport.py # HTTP auth + fail-closed startup
   test_live.py      # opt-in live smoke tests
 openapi.json        # Ashby's full OpenAPI spec (reference for adding new tools)
 ```
@@ -133,8 +158,8 @@ openapi.json        # Ashby's full OpenAPI spec (reference for adding new tools)
 ## Adding a new tool
 
 1. Find the endpoint in `openapi.json` (search by `/` prefix)
-2. Add a `types.Tool(name=..., inputSchema=...)` entry in `handle_list_tools` in `server.py`
-3. Add a matching `elif name == "..."` branch in `handle_call_tool`
+2. Add a `_tool(name=..., description=..., inputSchema=...)` entry in `_catalog()` in `src/ashby/tools.py`, and classify it in `_HINTS` in the same file (`READ_ONLY`, `ADDITIVE`, `DESTRUCTIVE_IDEMPOTENT`, …) — the module fails to import until you do, because the classification is what `ASHBY_READ_ONLY` keys off
+3. Route it in `src/ashby/handlers.py`: one line in `_SIMPLE` for a plain POST, or a handler function plus an entry in `_SPECIAL`
 4. Add a routing test in `tests/test_routing.py`
 5. Restart Claude Code to reload the MCP subprocess
 

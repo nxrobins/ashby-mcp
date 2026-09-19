@@ -44,6 +44,22 @@ def _extract_body(response: httpx.Response) -> Any:
         return response.text
 
 
+LOG_BODY_LIMIT = 500
+
+
+def truncate_for_log(value: Any, limit: int = LOG_BODY_LIMIT) -> str:
+    """Render a response body (or error text) for a log line, capped.
+
+    Ashby error envelopes echo the request back, so an unbounded log line
+    can carry candidate names, emails, and note text into the log
+    aggregator. The full body still reaches the caller via AshbyAPIError.
+    """
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}… [{len(text) - limit} more chars truncated]"
+
+
 class AshbyClient:
     """Handles Ashby API operations.
 
@@ -110,7 +126,7 @@ class AshbyClient:
         )
         if response.is_error:
             body = _extract_body(response)
-            logger.warning("Ashby %s failed: %d %s", endpoint, response.status_code, body)
+            logger.warning("Ashby %s failed: %d %s", endpoint, response.status_code, truncate_for_log(body))
             raise AshbyAPIError(response.status_code, body, endpoint)
         return response.json()
 
@@ -138,7 +154,7 @@ class AshbyClient:
         )
         if response.is_error:
             body = _extract_body(response)
-            logger.warning("Ashby %s failed: %d %s", endpoint, response.status_code, body)
+            logger.warning("Ashby %s failed: %d %s", endpoint, response.status_code, truncate_for_log(body))
             raise AshbyAPIError(response.status_code, body, endpoint)
         return response.json()
 

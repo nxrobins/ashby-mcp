@@ -130,13 +130,13 @@ async def test_list_candidates_renders_table(httpx_mock, markdown_mode):
                     "position": "Engineer",
                     "company": "Analytical Engines Ltd",
                     "school": "Cambridge",
-                    "linkedInUrl": "https://linkedin.com/in/ada",
+                    "socialLinks": [{"type": "LinkedIn", "url": "https://linkedin.com/in/ada"}],
                     "primaryEmailAddress": {"value": "ada@example.com"},
                     "source": {"title": "LinkedIn"},
                     "createdAt": "2024-12-01T10:00:00Z",
                 },
                 {
-                    # No position/company/school/linkedInUrl — those cells
+                    # No position/company/school/socialLinks — those cells
                     # must render as the "—" placeholder, not blow up.
                     "id": "c2",
                     "name": "Alan Turing",
@@ -234,8 +234,16 @@ async def test_get_candidate_renders_record(httpx_mock, markdown_mode):
                 "name": "Ada Lovelace",
                 "primaryEmailAddress": {"value": "ada@example.com"},
                 "primaryPhoneNumber": {"value": "555-0100"},
+                "socialLinks": [{"type": "LinkedIn", "url": "https://linkedin.com/in/ada"}],
+                "primaryLocation": {"id": "pl1", "locationSummary": "London, UK"},
                 "source": {"title": "LinkedIn"},
-                "tags": ["referral", "ex-google"],
+                "tags": [
+                    {"id": "t1", "title": "referral", "isArchived": False},
+                    {"id": "t2", "title": "ex-google", "isArchived": False},
+                ],
+                "applicationIds": ["a1", "a2"],
+                "customFields": [{"id": "cf1", "title": "Referred By", "value": "Bob"}],
+                "fileHandles": [{"id": "f1", "name": "cv.pdf", "handle": "h1"}],
                 "createdAt": "2024-12-01T10:00:00Z",
             },
         },
@@ -247,6 +255,13 @@ async def test_get_candidate_renders_record(httpx_mock, markdown_mode):
     assert "- **phone**: 555-0100" in text
     assert "- **source**: LinkedIn" in text
     assert "- **tags**: referral, ex-google" in text
+    assert "- **linkedin**: https://linkedin.com/in/ada" in text
+    assert "- **location**: London, UK" in text
+    assert "- **applications**: a1, a2" in text
+    assert "- **custom_fields**: Referred By: Bob" in text
+    # Keys outside the field map are appended under their raw name, so
+    # nothing in the record is silently dropped.
+    assert '- **fileHandles**: {"id":"f1","name":"cv.pdf","handle":"h1"}' in text
 
 
 async def test_unformatted_tool_falls_back_to_json(httpx_mock, markdown_mode):
@@ -307,3 +322,164 @@ async def test_record_error_envelope_is_not_rendered_as_blank_record(httpx_mock,
     assert "## Record" not in text
     assert "- **email**: —" not in text
     assert json.loads(text.partition(": ")[2]) == envelope
+
+
+# ---------------------------------------------------------------------------
+# Column maps follow Ashby's real response shapes (see test_spec_alignment.py)
+# ---------------------------------------------------------------------------
+
+
+async def test_list_applications_reads_ashby_shapes(httpx_mock, markdown_mode):
+    """Application.candidate is a summary and archiveReason uses `text`."""
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/application.list",
+        json={
+            "success": True,
+            "results": [
+                {
+                    "id": "a1",
+                    "candidate": {
+                        "id": "c1",
+                        "name": "Priya Raman",
+                        "primaryEmailAddress": {"value": "priya@example.com"},
+                    },
+                    "job": {"id": "j1", "title": "Account Executive"},
+                    "currentInterviewStage": {"id": "s1", "title": "Archived"},
+                    "status": "Archived",
+                    "archiveReason": {
+                        "id": "ar1",
+                        "text": "Timing (not right now)",
+                        "reasonType": "RejectedByCandidate",
+                    },
+                    "source": {"title": "LinkedIn"},
+                    "createdAt": "2025-03-01T10:00:00Z",
+                }
+            ],
+        },
+    )
+    text = await _call_raw("list_applications", {"status": "Archived"})
+    assert (
+        "| id | candidate_id | candidate | email | job | stage | status | archive_reason "
+        "| source | created |"
+    ) in text
+    assert (
+        "| a1 | c1 | Priya Raman | priya@example.com | Account Executive | Archived | Archived "
+        "| Timing (not right now) | LinkedIn |"
+    ) in text
+
+
+async def test_candidate_notes_show_full_content_and_author(httpx_mock, markdown_mode):
+    note = ("Strong discovery skills; closed a $2M pipeline. " * 5).strip()  # past the 60-char cap
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/candidate.listNotes",
+        json={
+            "success": True,
+            "results": [
+                {
+                    "id": "n1",
+                    "content": note,
+                    "createdAt": "2025-01-01T00:00:00Z",
+                    "author": {
+                        "id": "u1",
+                        "firstName": "Hana",
+                        "lastName": "Morales",
+                        "email": "hm@example.com",
+                    },
+                }
+            ],
+            "moreDataAvailable": False,
+        },
+    )
+    text = await _call_raw("list_candidate_notes", {"candidateId": "c1"})
+    assert "| hm@example.com |" in text
+    assert note in text
+
+
+async def test_jobs_location_uses_expanded_name_or_falls_back_to_id(httpx_mock, markdown_mode):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/job.list",
+        json={
+            "success": True,
+            "results": [
+                {
+                    "id": "j1",
+                    "title": "SWE",
+                    "status": "Open",
+                    "employmentType": "FullTime",
+                    "locationId": "loc_1",
+                    "departmentId": "d_1",
+                    "location": {"id": "loc_1", "name": "San Francisco"},
+                    "updatedAt": "2025-01-01T00:00:00Z",
+                },
+                {
+                    "id": "j2",
+                    "title": "AE",
+                    "status": "Open",
+                    "employmentType": "FullTime",
+                    "locationId": "loc_2",
+                    "departmentId": "d_2",
+                    "updatedAt": "2025-01-01T00:00:00Z",
+                },
+            ],
+        },
+    )
+    text = await _call_raw("list_jobs", {"expand": ["location"]})
+    assert "| j1 | SWE | Open | FullTime | San Francisco | d_1 |" in text
+    assert "| j2 | AE | Open | FullTime | loc_2 | d_2 |" in text
+
+
+async def test_custom_fields_table_lists_selectable_values(httpx_mock, markdown_mode):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/customField.list",
+        json={
+            "success": True,
+            "results": [
+                {
+                    "id": "f1",
+                    "title": "Level",
+                    "fieldType": "ValueSelect",
+                    "objectType": "Candidate",
+                    "isArchived": False,
+                    "selectableValues": [
+                        {"label": "Junior", "value": "junior"},
+                        {"label": "Senior", "value": "senior"},
+                    ],
+                }
+            ],
+        },
+    )
+    text = await _call_raw("list_custom_fields", {})
+    assert "| f1 | Level | ValueSelect | Candidate | Junior, Senior | no |" in text
+
+
+async def test_record_view_keeps_expanded_objects_and_hides_noise(httpx_mock, markdown_mode):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE}/application.info",
+        json={
+            "success": True,
+            "results": {
+                "id": "a1",
+                "candidate": {
+                    "id": "c1",
+                    "name": "Priya Raman",
+                    "primaryEmailAddress": {"value": "priya@example.com"},
+                },
+                "job": {"id": "j1", "title": "Account Executive"},
+                "currentInterviewStage": {"id": "s1", "title": "Onsite"},
+                "status": "Active",
+                "openings": [{"id": "op1", "openingState": "Open"}],
+                "submitterClientIp": "203.0.113.5",
+                "createdAt": "2025-03-01T10:00:00Z",
+            },
+        },
+    )
+    text = await _call_raw("get_application", {"applicationId": "a1", "expand": ["openings"]})
+    assert "## Priya Raman (`a1`)" in text
+    assert "- **email**: priya@example.com" in text
+    assert '- **openings**: {"id":"op1","openingState":"Open"}' in text
+    assert "203.0.113.5" not in text

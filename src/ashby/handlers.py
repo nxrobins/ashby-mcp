@@ -20,6 +20,7 @@ import json
 import logging
 import os
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import mcp.types as types
@@ -27,11 +28,14 @@ import mcp.types as types
 from . import policy
 from .client import ashby_client, truncate_for_log
 from .formatting import (
+    RECORD_FIELD_CHARS,
+    Accessor,
     Column,
     format_json,
     format_list,
     format_record,
     output_format,
+    reads,
 )
 from .tools import tool_blocked_reason
 
@@ -141,7 +145,95 @@ _SIMPLE: dict[str, tuple[str, str]] = {
 # verbose Ashby JSON into compact markdown tables (for lists) or labeled
 # sections (for single records). Tools without a map fall back to JSON.
 # Set ASHBY_OUTPUT=json to disable formatting entirely.
+#
+# Every dotted path below is checked against openapi.json by
+# tests/test_spec_alignment.py; callables declare what they read with
+# @reads so the same test covers them.
 # ---------------------------------------------------------------------------
+
+
+@reads("socialLinks")
+def _linkedin(record: dict) -> str | None:
+    """LinkedIn lives in `socialLinks[]`; Ashby has no top-level LinkedIn field on responses."""
+    for link in record.get("socialLinks") or []:
+        if str(link.get("type", "")).lower() == "linkedin":
+            return link.get("url")
+    return None
+
+
+@reads("socialLinks")
+def _social_links(record: dict) -> list[str]:
+    return [f"{link.get('type')}: {link.get('url')}" for link in record.get("socialLinks") or []]
+
+
+@reads("tags")
+def _tag_titles(record: dict) -> list[str]:
+    """Tags are `{id, title, isArchived}` objects; show the titles."""
+    return [
+        t.get("title") or t.get("id") if isinstance(t, dict) else str(t)
+        for t in record.get("tags") or []
+    ]
+
+
+@reads("emailAddresses")
+def _emails(record: dict) -> list[str]:
+    return [e.get("value") for e in record.get("emailAddresses") or []]
+
+
+@reads("phoneNumbers")
+def _phones(record: dict) -> list[str]:
+    return [p.get("value") for p in record.get("phoneNumbers") or []]
+
+
+def _custom_field_lines(key: str) -> Callable[[dict], list[str]]:
+    """`title: value` per custom field entry under `key` (customFields /
+    customFieldEntries); structured values are rendered as compact JSON."""
+
+    @reads(key)
+    def entries(record: dict) -> list[str]:
+        out = []
+        for field in record.get(key) or []:
+            value = field.get("value")
+            if isinstance(value, (dict, list)):
+                value = json.dumps(value, separators=(",", ":"), default=str)
+            out.append(f"{field.get('title')}: {value}")
+        return out
+
+    return entries
+
+
+_custom_fields = _custom_field_lines("customFields")
+_custom_field_entries = _custom_field_lines("customFieldEntries")
+
+
+@reads("selectableValues")
+def _selectable_values(record: dict) -> list[str]:
+    return [v.get("label") or v.get("value") for v in record.get("selectableValues") or []]
+
+
+@reads("hiringTeam")
+def _hiring_team(record: dict) -> list[str]:
+    return [
+        f"{m.get('email') or m.get('userId')} ({m.get('role')})"
+        for m in record.get("hiringTeam") or []
+    ]
+
+
+@reads("location", "locationId")
+def _job_location(record: dict) -> str | None:
+    """Jobs carry `locationId`; the `location` object only arrives with expand=["location"]."""
+    return (record.get("location") or {}).get("name") or record.get("locationId")
+
+
+@reads("interviewEvents")
+def _event_count(record: dict) -> int:
+    return len(record.get("interviewEvents") or [])
+
+
+@reads("interviewerUserIds")
+def _interviewer_count(record: dict) -> int:
+    return len(record.get("interviewerUserIds") or [])
+
 
 _CANDIDATE_COLS: Sequence[Column] = [
     ("id", "id"),
@@ -149,72 +241,65 @@ _CANDIDATE_COLS: Sequence[Column] = [
     ("position", "position"),
     ("company", "company"),
     ("school", "school"),
-    ("linkedin", "linkedInUrl"),
+    ("linkedin", _linkedin),
     ("email", "primaryEmailAddress.value"),
     ("source", "source.title"),
     ("created", "createdAt"),
+]
+
+_JOB_COLS: Sequence[Column] = [
+    ("id", "id"),
+    ("title", "title"),
+    ("status", "status"),
+    ("employment", "employmentType"),
+    ("location", _job_location),
+    ("department_id", "departmentId"),
+    ("updated", "updatedAt"),
+]
+
+# /job.search has no `expand`, so the location object never appears there.
+_JOB_SEARCH_COLS: Sequence[Column] = [
+    ("id", "id"),
+    ("title", "title"),
+    ("status", "status"),
+    ("employment", "employmentType"),
+    ("location_id", "locationId"),
+    ("department_id", "departmentId"),
+    ("updated", "updatedAt"),
+]
+
+_PROJECT_COLS: Sequence[Column] = [
+    ("id", "id"),
+    ("title", "title"),
+    ("archived", "isArchived"),
+    ("confidential", "confidential"),
 ]
 
 _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
     "list_candidates": ("Candidates", _CANDIDATE_COLS),
     "list_all_candidates": ("All candidates", _CANDIDATE_COLS),
     "search_candidates": ("Candidate search results", _CANDIDATE_COLS),
-    "list_jobs": (
-        "Jobs",
-        [
-            ("id", "id"),
-            ("title", "title"),
-            ("status", "status"),
-            ("location", "locations.0.locationName"),
-            ("department", "department.name"),
-            ("updated", "updatedAt"),
-        ],
-    ),
-    "search_jobs": (
-        "Job search results",
-        [
-            ("id", "id"),
-            ("title", "title"),
-            ("status", "status"),
-            ("location", "locations.0.locationName"),
-        ],
-    ),
+    "list_jobs": ("Jobs", _JOB_COLS),
+    "search_jobs": ("Job search results", _JOB_SEARCH_COLS),
     "list_applications": (
         "Applications",
         [
             ("id", "id"),
             ("candidate_id", "candidate.id"),
             ("candidate", "candidate.name"),
-            # Candidate profile signals — surfacing these on the list view lets a
-            # caller skim N applications with no per-row `get_candidate` calls.
-            ("position", "candidate.position"),
-            ("company", "candidate.company"),
-            ("school", "candidate.school"),
-            ("linkedin", "candidate.linkedInUrl"),
+            # Application.candidate is a summary (id, name, primary email /
+            # phone) — position, company and school need get_candidate.
+            ("email", "candidate.primaryEmailAddress.value"),
             ("job", "job.title"),
             ("stage", "currentInterviewStage.title"),
             ("status", "status"),
-            ("archive_reason", "archiveReason.title"),
+            ("archive_reason", "archiveReason.text"),
             ("source", "source.title"),
             ("created", "createdAt"),
         ],
     ),
-    "list_projects": (
-        "Projects",
-        [
-            ("id", "id"),
-            ("title", "title"),
-            ("archived", "isArchived"),
-        ],
-    ),
-    "search_projects": (
-        "Project search results",
-        [
-            ("id", "id"),
-            ("title", "title"),
-            ("archived", "isArchived"),
-        ],
-    ),
+    "list_projects": ("Projects", _PROJECT_COLS),
+    "search_projects": ("Project search results", _PROJECT_COLS),
     "list_sources": (
         "Sources",
         [
@@ -239,6 +324,8 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
             ("title", "title"),
             ("type", "fieldType"),
             ("object", "objectType"),
+            # The allowed values set_custom_field_value needs for select fields.
+            ("values", _selectable_values, 160),
             ("archived", "isArchived"),
         ],
     ),
@@ -247,8 +334,9 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
         [
             ("id", "id"),
             ("title", "title"),
-            ("type", "type"),
-            ("duration", "duration"),
+            ("debrief", "isDebrief"),
+            ("job_id", "jobId"),
+            ("archived", "isArchived"),
         ],
     ),
     "list_interview_plans": (
@@ -273,16 +361,18 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
         [
             ("id", "id"),
             ("title", "title"),
-            ("order", "orderInInterviewPlan"),
+            ("order", "order"),
+            ("stage_type", "stageType"),
         ],
     ),
     "list_interview_schedules": (
         "Interview schedules",
         [
             ("id", "id"),
-            ("applicationId", "applicationId"),
-            ("stage", "interviewStage.title"),
-            ("created", "createdAt"),
+            ("application_id", "applicationId"),
+            ("stage_id", "interviewStageId"),
+            ("status", "status"),
+            ("events", _event_count),
         ],
     ),
     "list_interview_events": (
@@ -292,109 +382,142 @@ _LIST_FORMATS: dict[str, tuple[str, Sequence[Column]]] = {
             ("interview", "interview.title"),
             ("start", "startTime"),
             ("end", "endTime"),
-            ("status", "status"),
+            ("interviewers", _interviewer_count),
+            ("feedback_submitted", "hasSubmittedFeedback"),
+            ("meeting", "meetingLink"),
         ],
     ),
     "list_candidate_notes": (
         "Candidate notes",
         [
             ("id", "id"),
-            ("createdAt", "createdAt"),
-            ("author", "createdByUser.email"),
-            ("note", "note"),
+            ("created", "createdAt"),
+            ("author", "author.email"),
+            # The note text is the point of this tool — never cut it to a table cell.
+            ("note", "content", RECORD_FIELD_CHARS),
         ],
     ),
 }
 
-_RECORD_FORMATS: dict[str, tuple[Any, Sequence[Column]]] = {
-    "get_candidate": (
+
+@dataclass(frozen=True)
+class RecordFormat:
+    """How a single-object response is rendered: title, labeled fields, and
+    top-level keys to leave out. Anything else in the record is appended
+    under its raw key (see formatting.format_record)."""
+
+    title: Accessor
+    fields: Sequence[Column]
+    hide: Sequence[str] = ()
+
+
+_RECORD_FORMATS: dict[str, RecordFormat] = {
+    "get_candidate": RecordFormat(
         "name",
         [
-            # Candidate profile signals first so they're visible at a glance.
+            # Profile signals first so they're visible at a glance.
             ("position", "position"),
             ("company", "company"),
             ("school", "school"),
-            ("linkedin", "linkedInUrl"),
+            ("linkedin", _linkedin),
+            ("social_links", _social_links),
             ("profile_url", "profileUrl"),
             ("resume_id", "resumeFileHandle.id"),
             ("resume_name", "resumeFileHandle.name"),
             ("email", "primaryEmailAddress.value"),
+            ("emails", _emails),
             ("phone", "primaryPhoneNumber.value"),
+            ("phones", _phones),
+            ("location", "primaryLocation.locationSummary"),
+            ("timezone", "timezone"),
             ("source", "source.title"),
-            ("credited to", "creditedToUser.email"),
-            (
-                "location",
-                lambda r: (
-                    ", ".join(
-                        v
-                        for v in [
-                            (r.get("location") or {}).get("city"),
-                            (r.get("location") or {}).get("region"),
-                            (r.get("location") or {}).get("country"),
-                        ]
-                        if v
-                    )
-                    or "—"
-                ),
-            ),
-            ("tags", "tags"),
+            ("credited_to", "creditedToUser.email"),
+            ("tags", _tag_titles),
+            ("applications", "applicationIds"),
+            ("custom_fields", _custom_fields),
             ("created", "createdAt"),
+            ("updated", "updatedAt"),
         ],
     ),
-    "get_job": (
+    "get_job": RecordFormat(
         "title",
         [
             ("status", "status"),
-            ("department", "department.name"),
-            ("location", "locations.0.locationName"),
+            ("employment", "employmentType"),
+            ("confidential", "confidential"),
+            ("location", _job_location),
+            ("department_id", "departmentId"),
+            ("interview_plan_id", "defaultInterviewPlanId"),
+            ("requisition", "customRequisitionId"),
+            ("hiring_team", _hiring_team),
+            ("custom_fields", _custom_fields),
+            ("job_posting_ids", "jobPostingIds"),
+            ("opened", "openedAt"),
+            ("closed", "closedAt"),
             ("created", "createdAt"),
+            ("updated", "updatedAt"),
         ],
     ),
-    "get_application": (
+    "get_application": RecordFormat(
         "candidate.name",
         [
-            # Candidate profile signals — same as get_candidate.
-            ("position", "candidate.position"),
-            ("company", "candidate.company"),
-            ("school", "candidate.school"),
-            ("linkedin", "candidate.linkedInUrl"),
-            ("profile_url", "candidate.profileUrl"),
-            ("resume_id", "candidate.resumeFileHandle.id"),
-            ("resume_name", "candidate.resumeFileHandle.name"),
+            ("candidate_id", "candidate.id"),
+            ("email", "candidate.primaryEmailAddress.value"),
+            ("phone", "candidate.primaryPhoneNumber.value"),
             ("job", "job.title"),
+            ("job_id", "job.id"),
             ("stage", "currentInterviewStage.title"),
+            ("stage_id", "currentInterviewStage.id"),
             ("status", "status"),
+            ("archive_reason", "archiveReason.text"),
+            ("archived_at", "archivedAt"),
             ("source", "source.title"),
+            ("credited_to", "creditedToUser.email"),
+            ("hiring_team", _hiring_team),
+            ("custom_fields", _custom_fields),
+            ("created", "createdAt"),
+            ("updated", "updatedAt"),
+        ],
+        hide=("submitterClientIp", "submitterUserAgent"),
+    ),
+    "get_project": RecordFormat(
+        "title",
+        [
+            ("description", "description"),
+            ("archived", "isArchived"),
+            ("confidential", "confidential"),
+            ("author_id", "authorId"),
+            ("custom_fields", _custom_field_entries),
             ("created", "createdAt"),
         ],
     ),
-    "get_project": (
-        "title",
-        [
-            ("archived", "isArchived"),
-            ("jobs", "associatedJobIds"),
-        ],
-    ),
-    "get_custom_field": (
+    "get_custom_field": RecordFormat(
         "title",
         [
             ("type", "fieldType"),
             ("object", "objectType"),
+            ("private", "isPrivate"),
             ("archived", "isArchived"),
+            ("values", _selectable_values),
         ],
     ),
-    "get_interview_stage": (
+    "get_interview_stage": RecordFormat(
         "title",
         [
             ("type", "type"),
             ("order", "orderInInterviewPlan"),
+            ("plan_id", "interviewPlanId"),
+            ("group_id", "interviewStageGroupId"),
         ],
     ),
-    "get_interview": (
+    "get_interview": RecordFormat(
         "title",
         [
-            ("type", "type"),
-            ("duration", "duration"),
+            ("debrief", "isDebrief"),
+            ("job_id", "jobId"),
+            ("archived", "isArchived"),
+            ("feedback_form_id", "feedbackFormDefinitionId"),
+            ("instructions", "instructionsPlain"),
         ],
     ),
 }
@@ -408,7 +531,6 @@ def _render(tool_name: str, payload: Any) -> str:
         title, columns = fmt
         return format_list(payload, title, columns)
     if fmt := _RECORD_FORMATS.get(tool_name):
-        title_acc, fields = fmt
         # Ashby wraps single-object responses as {success, results: {...}}.
         # Unwrap so the configured accessors see the record directly.
         record = (
@@ -416,7 +538,7 @@ def _render(tool_name: str, payload: Any) -> str:
             if isinstance(payload, dict) and isinstance(payload.get("results"), dict)
             else payload
         )
-        return format_record(record, title_acc, fields)
+        return format_record(record, fmt.title, fmt.fields, hide=fmt.hide)
     return format_json(payload)
 
 

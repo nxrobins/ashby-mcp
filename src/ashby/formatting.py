@@ -5,6 +5,11 @@ need for most decisions. These helpers render results as compact
 markdown tables (for lists) or labeled sections (for single records)
 that cost fewer tokens and read more naturally in a chat transcript.
 
+Accessors are dotted paths into Ashby's response objects, or callables
+decorated with `@reads(...)` naming the paths they touch. Both kinds are
+checked against `openapi.json` by tests/test_spec_alignment.py, so a
+column can't quietly point at a field Ashby never returns.
+
 Set `ASHBY_OUTPUT=json` to opt back into raw JSON (useful for tests or
 programmatic consumers).
 """
@@ -15,7 +20,35 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 Accessor = str | Callable[[Any], Any]
-Column = tuple[str, Accessor]  # (header, accessor)
+# (header, accessor) or (header, accessor, max_cell_chars). The optional
+# width lets long-form columns such as note text escape the table cap.
+Column = tuple[str, Accessor] | tuple[str, Accessor, int]
+
+TABLE_CELL_CHARS = 60
+RECORD_FIELD_CHARS = 1200
+RECORD_LIST_ITEMS = 20
+
+
+def reads(*paths: str) -> Callable[[Callable[[Any], Any]], Callable[[Any], Any]]:
+    """Declare the response paths a callable accessor reads.
+
+    Callables combine or reshape fields (pick the LinkedIn entry out of
+    `socialLinks`, count `interviewEvents`); the declaration is what lets
+    the spec-alignment test verify them like plain dotted paths.
+    """
+
+    def decorate(fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
+        fn.reads = paths  # type: ignore[attr-defined]
+        return fn
+
+    return decorate
+
+
+def accessor_paths(accessor: Accessor) -> tuple[str, ...]:
+    """The dotted paths an accessor touches (declared via @reads for callables)."""
+    if callable(accessor):
+        return tuple(getattr(accessor, "reads", ()))
+    return (accessor,)
 
 
 def output_format() -> str:
@@ -53,37 +86,54 @@ def get_value(obj: Any, accessor: Accessor, default: Any = "—") -> Any:
     return default if cur is None or cur == "" else cur
 
 
-def _cell(v: Any, max_len: int = 60, max_list_items: int = 3) -> str:
-    """Render a Python value as a single markdown cell.
-
-    `max_len` caps single-string output. Tables pass the default 60 (a
-    cell that wraps into multiple visual lines is harder to scan than
-    one that gets a `…` truncation). Records pass a much larger value
-    because long-form fields (notes, summaries, multi-name lists) are
-    the whole point of a record view.
-    """
+def _scalar(v: Any) -> str:
+    """One value as text: booleans as yes/no, containers as compact JSON."""
     if isinstance(v, bool):
         return "yes" if v else "no"
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, separators=(",", ":"), default=str, ensure_ascii=False)
+    return str(v)
+
+
+def _cell(v: Any, max_len: int = TABLE_CELL_CHARS, max_list_items: int = 3) -> str:
+    """Render a Python value as a single markdown cell.
+
+    `max_len` caps the output. Tables pass the default 60 (a cell that
+    wraps into multiple visual lines is harder to scan than one that gets
+    a `…` truncation). Records pass a much larger value because long-form
+    fields (notes, summaries, multi-name lists) are the point of a record
+    view. Lists show the first `max_list_items` entries.
+    """
     if isinstance(v, list):
         if not v:
             return "—"
-        items = [str(x) for x in v[:max_list_items]]
-        head = ", ".join(items)
-        return head + ("…" if len(v) > max_list_items else "")
-    s = str(v).replace("|", "\\|").replace("\n", " ").strip()
+        s = ", ".join(_scalar(x) for x in v[:max_list_items])
+        if len(v) > max_list_items:
+            s += "…"
+    else:
+        s = _scalar(v)
+    s = s.replace("|", "\\|").replace("\n", " ").strip()
     if len(s) <= max_len:
         return s
     return s[: max(0, max_len - 3)] + "…"
+
+
+def _column(column: Column) -> tuple[str, Accessor, int]:
+    header, accessor = column[0], column[1]
+    width = column[2] if len(column) > 2 else TABLE_CELL_CHARS
+    return header, accessor, width
 
 
 def table(rows: Sequence[Any], columns: Sequence[Column]) -> str:
     """Render a list of records as a markdown table. Empty → '(no results)'."""
     if not rows:
         return "_(no results)_"
-    header = "| " + " | ".join(c[0] for c in columns) + " |"
-    sep = "|" + "|".join(" --- " for _ in columns) + "|"
+    cols = [_column(c) for c in columns]
+    header = "| " + " | ".join(h for h, _, _ in cols) + " |"
+    sep = "|" + "|".join(" --- " for _ in cols) + "|"
     body_lines = [
-        "| " + " | ".join(_cell(get_value(r, acc)) for _, acc in columns) + " |" for r in rows
+        "| " + " | ".join(_cell(get_value(r, acc), max_len=w) for _, acc, w in cols) + " |"
+        for r in rows
     ]
     return "\n".join([header, sep, *body_lines])
 
@@ -121,12 +171,27 @@ def format_list(response: Any, title: str, columns: Sequence[Column]) -> str:
     return "\n".join(lines)
 
 
-def format_record(record: Any, title_accessor: Accessor, fields: Sequence[Column]) -> str:
+def _record_cell(v: Any) -> str:
+    return _cell(v, max_len=RECORD_FIELD_CHARS, max_list_items=RECORD_LIST_ITEMS)
+
+
+def format_record(
+    record: Any,
+    title_accessor: Accessor,
+    fields: Sequence[Column],
+    *,
+    hide: Sequence[str] = (),
+) -> str:
     """Format a single Ashby record as a labeled markdown section.
 
-    Records get a much larger per-field budget than table cells (1200 chars,
-    20 list items) — they're typically used to inspect ONE entity in depth,
-    where notes / summaries / skill-lists are the point.
+    The configured `fields` come first, with friendly labels. Every other
+    top-level key of the record follows under its raw name as compact
+    JSON, so expanded sub-objects (`openings`, `applicationFormSubmissions`,
+    `location`) and fields added to the API later are never silently
+    dropped. `hide` names keys that are pure noise for the caller.
+
+    Records get a much larger per-field budget than table cells (1200
+    chars, 20 list items) — they're used to inspect ONE entity in depth.
     """
     if not isinstance(record, dict):
         return json.dumps(record, indent=2)
@@ -136,10 +201,19 @@ def format_record(record: Any, title_accessor: Accessor, fields: Sequence[Column
     if rid and str(rid) != str(title):
         heading += f" (`{rid}`)"
     lines = [heading, ""]
-    for label, acc in fields:
-        lines.append(
-            f"- **{label}**: {_cell(get_value(record, acc), max_len=1200, max_list_items=20)}"
-        )
+    consumed: set[str] = {"id", *hide}
+    for path in accessor_paths(title_accessor):
+        consumed.add(path.split(".")[0])
+    for column in fields:
+        label, acc, _ = _column(column)
+        lines.append(f"- **{label}**: {_record_cell(get_value(record, acc))}")
+        for path in accessor_paths(acc):
+            consumed.add(path.split(".")[0])
+    for key in sorted(k for k in record if k not in consumed):
+        value = record[key]
+        if value is None or value == "" or value == [] or value == {}:
+            continue
+        lines.append(f"- **{key}**: {_record_cell(value)}")
     return "\n".join(lines)
 
 

@@ -10,6 +10,7 @@ Skipped if `ASHBY_API_KEY` looks like the dummy unit-test key.
 """
 
 import os
+import re
 
 import pytest
 
@@ -95,3 +96,45 @@ async def test_live_get_candidate_roundtrip(call_tool):
     candidate_id = results[0]["id"]
     detail = _assert_ok_or_skip_on_403(await call_tool("get_candidate", {"id": candidate_id}), "get_candidate")
     assert detail.get("results", {}).get("id") == candidate_id
+
+
+def _table_rows(text: str) -> tuple[list[str], list[list[str]]]:
+    """Split a rendered markdown table into (header columns, row cells)."""
+    lines = [l for l in text.splitlines() if l.startswith("| ")]
+    header = [c.strip() for c in re.split(r"(?<!\\)\|", lines[0].strip("|"))]
+    rows = [[c.strip() for c in re.split(r"(?<!\\)\|", l.strip("|"))] for l in lines[1:]]
+    return header, rows
+
+
+@pytest.mark.skipif(not _has_real_key(), reason=_skip_reason)
+@pytest.mark.parametrize(
+    "tool, args, required_columns",
+    [
+        # Columns whose source field the spec marks as required — if the
+        # field map named an invented field, these would all render `—`.
+        ("list_candidates", {"limit": 5}, ["name"]),
+        ("list_jobs", {"limit": 5, "status": ["Open", "Closed"]}, ["status", "updated"]),
+        ("list_applications", {"limit": 5}, ["candidate", "stage", "status", "created"]),
+    ],
+)
+async def test_live_markdown_tables_show_real_values(monkeypatch, tool, args, required_columns):
+    """Formatting contract: in the default markdown mode the columns the
+    field maps read must be populated by the *current* API, not just by
+    the checked-in openapi.json snapshot."""
+    from ashby.handlers import ToolError, dispatch
+
+    monkeypatch.setenv("ASHBY_OUTPUT", "markdown")
+    try:
+        text = (await dispatch(tool, args))[0].text
+    except ToolError as e:
+        if "403" in str(e):
+            pytest.skip(f"{tool}: API key lacks permission ({e})")
+        raise
+    if "_(no results)_" in text:
+        pytest.skip(f"{tool}: workspace returned no rows")
+    header, rows = _table_rows(text)
+    assert rows, text
+    for column in required_columns:
+        idx = header.index(column)
+        blank = [row for row in rows if row[idx] == "—"]
+        assert not blank, f"{tool}: column {column!r} rendered as — for {len(blank)} row(s):\n{text}"

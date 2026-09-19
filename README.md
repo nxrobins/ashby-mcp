@@ -115,7 +115,7 @@ uv run pytest                 # unit tests (mocked HTTP, no network)
 uv run pytest -m live         # live smoke tests (requires ASHBY_API_KEY)
 ```
 
-Unit tests cover every tool's routing and request shape. Live tests hit only read-only endpoints (`list_*`, `get_*`, `search_*`) so they can't corrupt workspace data; they exist to catch contract drift.
+Unit tests cover every tool's routing and request shape, the markdown formatter, and — via `tests/test_spec_alignment.py` — that every field the formatter reads exists in the checked-in `openapi.json` (a column map written against an invented response shape otherwise fails nothing and just renders `—`). Live tests hit only read-only endpoints (`list_*`, `get_*`, `search_*`) so they can't corrupt workspace data; they exist to catch contract drift against the current API, including a markdown-mode render check.
 
 ### Project layout
 
@@ -124,10 +124,12 @@ src/ashby/
   __init__.py       # entry point
   server.py         # AshbyClient + MCP tool definitions + dispatcher
 tests/
-  conftest.py       # shared fixtures
-  test_routing.py   # unit tests (one per tool)
-  test_live.py      # opt-in live smoke tests
-openapi.json        # Ashby's full OpenAPI spec (reference for adding new tools)
+  conftest.py            # shared fixtures
+  test_routing.py        # unit tests (one per tool)
+  test_formatting.py     # markdown table / record rendering
+  test_spec_alignment.py # field maps vs. openapi.json response schemas
+  test_live.py           # opt-in live smoke tests
+openapi.json        # Ashby's full OpenAPI spec (reference for adding new tools; validates the field maps)
 ```
 
 ## Adding a new tool

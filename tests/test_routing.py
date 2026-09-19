@@ -263,22 +263,30 @@ async def test_search_jobs(httpx_mock, call_tool):
 
 
 async def test_list_jobs_defaults_status_to_open(httpx_mock, call_tool):
-    """The handler injects status=['Open'] when the caller omits it."""
+    """The handler injects status=['Open'] and expand=['location'] (a Job
+    only carries locationId; the expansion supplies the name) when the
+    caller omits them."""
     _ok(httpx_mock, "/job.list")
     await call_tool("list_jobs", {})
-    assert _sent_body(httpx_mock) == {"status": ["Open"]}
+    assert _sent_body(httpx_mock) == {"status": ["Open"], "expand": ["location"]}
 
 
-async def test_list_jobs_respects_explicit_status(httpx_mock, call_tool):
+async def test_list_jobs_respects_explicit_status_and_expand(httpx_mock, call_tool):
     _ok(httpx_mock, "/job.list")
-    await call_tool("list_jobs", {"status": ["Closed", "Archived"]})
-    assert _sent_body(httpx_mock) == {"status": ["Closed", "Archived"]}
+    await call_tool("list_jobs", {"status": ["Closed", "Archived"], "expand": ["openings"]})
+    assert _sent_body(httpx_mock) == {"status": ["Closed", "Archived"], "expand": ["openings"]}
 
 
-async def test_get_job(httpx_mock, call_tool):
+async def test_get_job_defaults_expand_to_location(httpx_mock, call_tool):
     _ok(httpx_mock, "/job.info")
     await call_tool("get_job", {"id": "j1"})
-    assert _sent_body(httpx_mock) == {"id": "j1"}
+    assert _sent_body(httpx_mock) == {"id": "j1", "expand": ["location"]}
+
+
+async def test_get_job_respects_explicit_expand(httpx_mock, call_tool):
+    _ok(httpx_mock, "/job.info")
+    await call_tool("get_job", {"id": "j1", "expand": ["openings"]})
+    assert _sent_body(httpx_mock) == {"id": "j1", "expand": ["openings"]}
 
 
 async def test_update_job(httpx_mock, call_tool):
